@@ -597,6 +597,161 @@ print(f"プロバイダー別: {stats['by_provider']}")
 - **検索タスク** (`task_type="search"`): Perplexityを優先
 - **一般タスク**: 設定された優先順位に従う
 
+### 安全機能
+
+#### 1. DRY_RUNモード（ゼロコスト運用）
+
+**デフォルトで有効** - すべての外部API呼び出しをモック化し、実行コストをゼロに抑えます。
+
+```bash
+# .env
+DRY_RUN=true                    # モックレスポンスを返す（デフォルト）
+LLM_DAILY_MAX_COST_USD=0.0      # 日次予算を0に設定
+PERPLEXITY_MAX_REQUESTS_PER_DAY=0  # Perplexity無効化
+RUNNER_ENABLED=false            # バックグラウンド実行を無効化
+```
+
+**DRY_RUNモードの特徴:**
+- ✅ すべてのLLM API呼び出しがモック化される
+- ✅ 実際のAPIキーがなくても動作する
+- ✅ コストが一切発生しない
+- ✅ コード生成・検証・テストに最適
+- ✅ Claude Code (Web) のクレジットのみで開発可能
+
+**実際のAPI呼び出しに切り替える場合:**
+
+```bash
+# .env
+DRY_RUN=false                   # 実際のAPI呼び出しを有効化
+LLM_DAILY_MAX_COST_USD=5.0      # 日次予算を設定（例: $5/日）
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50  # Perplexity制限
+RUNNER_ENABLED=true             # 必要に応じてRunner有効化
+```
+
+#### 2. 日次予算管理
+
+LLMの使用コストを日次で制限します：
+
+```bash
+LLM_DAILY_MAX_COST_USD=5.0  # 1日あたり$5まで
+```
+
+予算に達すると自動的にAPI呼び出しを停止し、エラーを返します。翌日0時（UTC）に自動リセットされます。
+
+#### 3. Perplexity検索専用モード
+
+Perplexityを検索タスク専用に制限し、誤使用を防ぎます：
+
+```bash
+PERPLEXITY_SEARCH_ONLY=true  # デフォルト: true
+```
+
+この設定により、`task_type="search"` 以外でPerplexityが使用されることを防ぎます。
+
+#### 4. サーキットブレーカー
+
+プロバイダーが連続して5回失敗すると、5分間そのプロバイダーを使用停止にします。自動的に他のプロバイダーにフォールバックします。
+
+#### 5. レート制限
+
+プロバイダー別にリクエスト数を制限：
+- **Anthropic**: 50リクエスト/分
+- **Gemini**: 60リクエスト/分
+- **Perplexity**: 20リクエスト/分
+- **OpenAI**: 60リクエスト/分
+
+#### 6. メモリリーク対策
+
+24時間稼働を想定し、メモリ使用量を制限：
+- 使用履歴: 最大1,000件（約150KB）
+- リクエストタイムスタンプ: プロバイダーあたり100件
+
+#### 使用統計の確認
+
+```python
+from core import get_llm_router
+
+router = get_llm_router()
+stats = router.get_usage_stats()
+
+print(f"DRY_RUNモード: {stats['dry_run']}")
+print(f"日次コスト: {stats['daily_cost_used']} / {stats['daily_cost_limit']}")
+print(f"残り予算: {stats['budget_remaining']}")
+print(f"総リクエスト: {stats['total_requests']}")
+```
+
+## ゼロコスト運用ガイド（推奨）
+
+このプロジェクトは、**Claude Code (Web)** のクレジットのみを使用して、外部API課金なしで開発できるように設計されています。
+
+### 基本方針
+
+1. **DRY_RUN=true** をデフォルトで維持
+2. すべてのLLM呼び出しはモック化
+3. 実際のAPI呼び出しは本番環境のみ
+4. 開発・テスト・コード生成は完全無料
+
+### セットアップ手順
+
+#### 1. GitHub Codespaces で起動
+
+```bash
+# Codespaces が自動的に .env を生成（DRY_RUN=true がデフォルト）
+```
+
+#### 2. コード生成のみで開発
+
+```bash
+# Claude Code (Web) でコード生成・編集
+# すべてのエージェント実行はモック化される
+# コストゼロ
+```
+
+#### 3. 動作確認
+
+```bash
+# モックレスポンスで動作確認
+python -m core.demo_search "介護DXの最新トレンド"
+
+# API経由でも確認可能（モック）
+curl http://localhost:8000/api/v1/agents
+```
+
+#### 4. 本番環境のみ実API使用
+
+```bash
+# 本番環境の .env のみ
+DRY_RUN=false
+LLM_DAILY_MAX_COST_USD=10.0
+RUNNER_ENABLED=true
+```
+
+### ゼロコスト開発の利点
+
+- ✅ **完全無料**: 外部API課金なし
+- ✅ **高速開発**: モックレスポンスで即座に動作確認
+- ✅ **安全**: 誤ってAPIを大量消費する心配なし
+- ✅ **テスト**: 実際のAPIキーなしでテスト可能
+- ✅ **CI/CD**: GitHub Actionsでもコストゼロ
+
+### モックレスポンス例
+
+```python
+result = await llm_router.generate(
+    prompt="介護DXについて教えてください",
+    task_type="search"
+)
+
+print(result)
+# {
+#   "status": "success",
+#   "provider": "perplexity",
+#   "result": "[MOCK SEARCH RESULT]\nProvider: perplexity\n...",
+#   "dry_run": true,
+#   "cost": "$0.00"
+# }
+```
+
 ## デプロイ
 
 ### Docker

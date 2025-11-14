@@ -65,6 +65,14 @@ class LLMRouter:
         # Perplexityを検索専用にするか
         self.perplexity_search_only = os.getenv("PERPLEXITY_SEARCH_ONLY", "true").lower() == "true"
 
+        # DRY_RUNモード（モック応答、実際のAPI呼び出しなし）
+        self.dry_run = os.getenv("DRY_RUN", "true").lower() == "true"
+
+        # 日次コスト予算（USD）
+        self.daily_max_cost = float(os.getenv("LLM_DAILY_MAX_COST_USD", "0.0"))
+        self.daily_cost_used = 0.0
+        self.cost_reset_date = datetime.now().date()
+
         # タイムアウト・リトライ設定
         self.max_retries = max_retries
         self.timeout = timeout
@@ -119,6 +127,8 @@ class LLMRouter:
             priority=self.priority,
             openai_enabled=self.enable_openai,
             perplexity_search_only=self.perplexity_search_only,
+            dry_run=self.dry_run,
+            daily_max_cost=self.daily_max_cost,
             timeout=self.timeout
         )
 
@@ -194,6 +204,86 @@ class LLMRouter:
             return False
 
         return True
+
+    def _check_daily_budget(self) -> bool:
+        """日次予算をチェック"""
+        # 日付が変わっていればリセット
+        today = datetime.now().date()
+        if today > self.cost_reset_date:
+            self.daily_cost_used = 0.0
+            self.cost_reset_date = today
+            logger.info("Daily cost budget reset", date=today)
+
+        # 予算チェック
+        if self.daily_cost_used >= self.daily_max_cost:
+            logger.warning(
+                "Daily cost budget exceeded",
+                used=self.daily_cost_used,
+                limit=self.daily_max_cost
+            )
+            return False
+
+        return True
+
+    def _record_cost(self, provider: str, tokens: int) -> None:
+        """コストを記録（概算）"""
+        # プロバイダー別の概算コスト（per 1M tokens）
+        cost_per_million = {
+            LLMProvider.ANTHROPIC: 3.0,  # Claude 3.5 Sonnet
+            LLMProvider.GEMINI: 1.25,    # Gemini 1.5 Pro
+            LLMProvider.PERPLEXITY: 1.0, # Sonar Large
+            LLMProvider.OPENAI: 30.0,    # GPT-4
+        }
+
+        rate = cost_per_million.get(provider, 1.0)
+        cost = (tokens / 1_000_000) * rate
+        self.daily_cost_used += cost
+
+        logger.info(
+            "API cost recorded",
+            provider=provider,
+            tokens=tokens,
+            cost_usd=f"${cost:.4f}",
+            daily_total=f"${self.daily_cost_used:.4f}"
+        )
+
+    def _get_mock_response(self, prompt: str, provider: str, task_type: Optional[str]) -> str:
+        """DRY_RUNモード用のモックレスポンスを生成"""
+        logger.info("Generating mock response (DRY_RUN mode)", provider=provider, task_type=task_type)
+
+        if task_type == "search":
+            return f"""[MOCK SEARCH RESULT]
+Provider: {provider}
+Query: {prompt[:100]}...
+
+検索結果:
+1. サンプル結果1: 関連する情報が見つかりました
+2. サンプル結果2: 追加の詳細情報
+3. サンプル結果3: さらなる参考情報
+
+この結果はDRY_RUNモードのモックレスポンスです。
+実際のAPI呼び出しは行われていません。
+"""
+        else:
+            return f"""[MOCK LLM RESPONSE]
+Provider: {provider}
+Task Type: {task_type or 'general'}
+Prompt: {prompt[:100]}...
+
+応答:
+ご質問ありがとうございます。
+
+この応答はDRY_RUNモードで生成されたモックレスポンスです。
+実際のLLM API（{provider}）は呼び出されていません。
+コストは発生していません。
+
+実際のAPI呼び出しを行うには:
+1. .envファイルで DRY_RUN=false に設定
+2. LLM_DAILY_MAX_COST_USD を適切な値に設定
+3. 各プロバイダーのAPI Keyが正しく設定されているか確認
+
+よろしくお願いいたします。
+"""
 
     def select_provider(
         self,
@@ -320,6 +410,33 @@ class LLMRouter:
                 "result": ""
             }
 
+        # DRY_RUNモードの場合はモックレスポンスを返す
+        if self.dry_run:
+            mock_response = self._get_mock_response(prompt, provider, task_type)
+            logger.info("DRY_RUN mode: returning mock response", provider=provider)
+            return {
+                "status": "success",
+                "provider": provider,
+                "result": mock_response,
+                "timestamp": datetime.now().isoformat(),
+                "dry_run": True,
+                "cost": "$0.00"
+            }
+
+        # 日次予算チェック
+        if not self._check_daily_budget():
+            logger.error(
+                "Daily budget exceeded, returning error",
+                used=self.daily_cost_used,
+                limit=self.daily_max_cost
+            )
+            return {
+                "status": "error",
+                "error": f"Daily budget exceeded: ${self.daily_cost_used:.2f} / ${self.daily_max_cost:.2f}",
+                "result": "",
+                "suggestion": "Increase LLM_DAILY_MAX_COST_USD or wait until tomorrow"
+            }
+
         # リトライロジック
         for retry in range(self.max_retries):
             try:
@@ -342,6 +459,10 @@ class LLMRouter:
                 # レート制限の記録
                 self.request_timestamps[provider].append(time.time())
 
+                # コストを記録（概算でmax_tokensを使用）
+                estimated_tokens = max_tokens or 4096
+                self._record_cost(provider, estimated_tokens)
+
                 # エラーカウントをリセット
                 self.error_counts[provider] = 0
 
@@ -350,7 +471,8 @@ class LLMRouter:
                     "provider": provider,
                     "result": result,
                     "timestamp": datetime.now().isoformat(),
-                    "retries": retry
+                    "retries": retry,
+                    "estimated_cost": f"${(estimated_tokens / 1_000_000) * 3.0:.4f}"
                 }
 
             except asyncio.TimeoutError:
@@ -701,7 +823,11 @@ class LLMRouter:
             "by_provider": dict(self.usage_stats),
             "available_providers": self.get_available_providers(),
             "priority": self.priority,
-            "openai_enabled": self.enable_openai
+            "openai_enabled": self.enable_openai,
+            "dry_run": self.dry_run,
+            "daily_cost_used": f"${self.daily_cost_used:.4f}",
+            "daily_cost_limit": f"${self.daily_max_cost:.2f}",
+            "budget_remaining": f"${max(0, self.daily_max_cost - self.daily_cost_used):.4f}"
         }
 
     def set_priority(self, priority: List[str]) -> None:

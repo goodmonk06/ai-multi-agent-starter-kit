@@ -17,13 +17,19 @@ cat > /workspace/.env << EOF
 # Environment
 ENVIRONMENT=${ENVIRONMENT:-development}
 
+# Execution Mode
+# DRY_RUN mode: All external API calls are mocked (zero cost)
+DRY_RUN=${DRY_RUN:-true}
+
+# Runner Configuration
+# RUNNER_ENABLED: Set to 'false' to disable background task execution
+RUNNER_ENABLED=${RUNNER_ENABLED:-false}
+
 # API Keys
 OPENAI_API_KEY=${OPENAI_API_KEY}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 GEMINI_API_KEY=${GEMINI_API_KEY}
 PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
-PERPLEXITY_MAX_REQUESTS_PER_DAY=${PERPLEXITY_MAX_REQUESTS_PER_DAY:-50}
-PERPLEXITY_MAX_DOLLARS_PER_MONTH=${PERPLEXITY_MAX_DOLLARS_PER_MONTH:-5}
 
 # LLM Configuration
 # OpenAI is disabled by default (set to 'true' to enable)
@@ -35,6 +41,13 @@ LLM_PRIORITY=${LLM_PRIORITY:-anthropic,gemini,perplexity}
 
 # Perplexity Search-Only Mode (prevents usage for non-search tasks)
 PERPLEXITY_SEARCH_ONLY=${PERPLEXITY_SEARCH_ONLY:-true}
+
+# Budget and Cost Controls
+# Maximum daily cost in USD (0.0 = zero-cost mode with mocked API calls)
+LLM_DAILY_MAX_COST_USD=${LLM_DAILY_MAX_COST_USD:-0.0}
+
+# Maximum Perplexity requests per day (0 = disabled in DRY_RUN mode)
+PERPLEXITY_MAX_REQUESTS_PER_DAY=${PERPLEXITY_MAX_REQUESTS_PER_DAY:-0}
 
 # Timeout and Retry Settings
 LLM_TIMEOUT=${LLM_TIMEOUT:-60}
