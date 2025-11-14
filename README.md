@@ -24,13 +24,16 @@ ai-multi-agent-starter-kit/
 │   ├── analyzer_agent.py   # データ分析
 │   ├── generator_agent.py  # コンテンツ生成
 │   ├── compliance_agent.py # コンプライアンスチェック
-│   └── executor_agent.py   # タスク実行
+│   ├── executor_agent.py   # タスク実行
+│   └── search_agent.py     # Web検索（Perplexity）
 │
 ├── core/                   # コアインフラ
 │   ├── workflow.py         # LangGraphワークフロー
 │   ├── memory.py           # 共有メモリストア
 │   ├── task_router.py      # タスクルーター
-│   └── tools.py            # 共通ツール
+│   ├── tools.py            # 共通ツール
+│   └── tools/
+│       └── perplexity_search.py  # Perplexity API統合
 │
 ├── apps/                   # ビジネスアプリケーション
 │   ├── care_scheduler/     # 福祉DX
@@ -235,6 +238,69 @@ matches = await app.match_candidates(
 - タスクの実行
 - ワークフローの調整
 - 外部APIの呼び出し
+
+### Search Agent
+- Perplexity APIを使った高品質なWeb検索
+- リアルタイム情報の取得
+- 検索結果の要約と構造化
+- 1日のリクエスト数・月額利用額の制限管理
+
+## Search Agent の使い方
+
+### デモスクリプトを実行
+
+```bash
+# シンプルな検索
+python -m core.demo_search "介護DXの最新トレンド"
+
+# 最大トークン数を指定
+python -m core.demo_search "AI エージェント 活用事例" --max-tokens 1024
+
+# 複数検索デモ
+python -m core.demo_search --mode multi
+
+# トピック検索デモ
+python -m core.demo_search "福祉DX" --mode topic
+
+# ワークフロー統合デモ
+python -m core.demo_search "介護業界の課題" --mode workflow
+```
+
+### Pythonコードで使用
+
+```python
+import asyncio
+from agents import SearchAgent
+from core import MemoryStore
+
+async def main():
+    memory = MemoryStore()
+    search_agent = SearchAgent(memory_store=memory)
+
+    # 検索を実行
+    result = await search_agent.search(
+        query="介護DXの最新トレンド",
+        max_tokens=512
+    )
+
+    print(result["result"])
+
+    # 使用統計を確認
+    stats = await search_agent.get_usage_stats()
+    print(f"Daily requests: {stats['perplexity_usage']['daily_requests']}")
+    print(f"Monthly cost: ${stats['perplexity_usage']['monthly_cost']:.4f}")
+
+asyncio.run(main())
+```
+
+### 環境変数の設定
+
+```bash
+# .envファイルに以下を設定
+PERPLEXITY_API_KEY=your-actual-api-key
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50
+PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
+```
 
 ## 開発ガイド
 
