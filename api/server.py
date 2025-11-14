@@ -8,18 +8,25 @@ API Server - FastAPIベースのRESTful APIサーバー
 - /apps - アプリケーション機能
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Dict, List, Optional, Any
 import structlog
 from datetime import datetime
+from pathlib import Path
+import json
 import uvicorn
 
 # Import routes
 from .routes import tasks, agents, workflows, apps
 
 logger = structlog.get_logger()
+
+# Jinja2テンプレート設定
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 # FastAPIアプリケーション
 app = FastAPI(
@@ -226,6 +233,72 @@ async def trigger_runner_jobs(background_tasks: BackgroundTasks):
         "message": "All jobs triggered for execution",
         "timestamp": datetime.now().isoformat()
     }
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request):
+    """
+    Runnerダッシュボード
+
+    ブラウザで /dashboard にアクセスすると、Runnerの状態と
+    直近の実行ログを表示
+    """
+    import os
+
+    # Runnerステータスを取得
+    runner = system_state.get("runner")
+
+    if runner is None:
+        status = {
+            "enabled": False,
+            "running": False,
+            "message": "Runner is not initialized (RUNNER_ENABLED=false)",
+            "jobs_executed_last_hour": 0,
+            "registry_stats": {"total_jobs": 0}
+        }
+    else:
+        status = runner.get_status()
+        status["enabled"] = True
+
+    # 直近のruns を取得（storage/runs/*.jsonl から）
+    runs = []
+    log_dir = Path(os.getenv("RUNNER_LOG_DIR", "storage/runs"))
+
+    if log_dir.exists():
+        # 最新のJSONLファイルを読み込み
+        jsonl_files = sorted(log_dir.glob("*.jsonl"), reverse=True)
+
+        for jsonl_file in jsonl_files[:3]:  # 最大3ファイル
+            try:
+                with open(jsonl_file, "r") as f:
+                    for line in f:
+                        if not line.strip():
+                            continue
+
+                        event = json.loads(line)
+                        runs.append(event)
+
+                        # 最大50件
+                        if len(runs) >= 50:
+                            break
+
+            except Exception as e:
+                logger.error("Failed to read JSONL file", file=str(jsonl_file), error=str(e))
+
+            if len(runs) >= 50:
+                break
+
+    # 時系列順にソート（新しい順）
+    runs = sorted(runs, key=lambda x: x.get("timestamp", ""), reverse=True)[:20]
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "status": status,
+            "runs": runs
+        }
+    )
 
 
 @app.get("/api/v1/system/stats")

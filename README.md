@@ -760,6 +760,167 @@ python -m runner.main
 
 ---
 
+## ダッシュボード & 通知
+
+### Web Dashboard
+
+ブラウザでRunnerの状態を可視化・操作できます。
+
+```bash
+# APIサーバーを起動
+uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
+
+# ブラウザでアクセス
+# Local:      http://localhost:8000/dashboard
+# Codespaces: https://{codespace-name}-8000.app.github.dev/dashboard
+```
+
+#### ダッシュボード機能
+
+- **Runner Status**: 有効/実行中/エラー数を表示
+- **Job Statistics**: 直近1時間の実行数、総ジョブ数
+- **Recent Runs**: 最新20件の実行ログ（タイムスタンプ、ジョブ名、ステータス、実行時間）
+- **Run Demo Now**: ボタンで全ジョブを手動実行
+- **Auto-Refresh**: 30秒ごとに自動リロード
+
+#### 使用例
+
+```bash
+# 1. Runnerを起動
+export RUNNER_ENABLED=true
+export DRY_RUN=true
+python -m runner.main &
+
+# 2. APIサーバーを起動
+uvicorn api.server:app --reload &
+
+# 3. ブラウザで http://localhost:8000/dashboard を開く
+
+# 4. "Run Demo Now"ボタンをクリックして手動実行
+```
+
+### 通知システム
+
+Morning Reportやアラートをメール/Slackに送信できます。
+
+#### DRY_RUNモード（デフォルト）
+
+外部に送信せず、`storage/notifications.jsonl`に記録のみ:
+
+```bash
+# テスト通知を送信
+python scripts/send_test_notification.py
+
+# 確認
+cat storage/notifications.jsonl | jq .
+```
+
+#### 実運用モード
+
+実際にメール/Slackに送信:
+
+```bash
+# .env
+DRY_RUN=false
+NOTIFY_CHANNELS=email,slack
+
+# Email (SMTP)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=your-email@gmail.com
+SMTP_TO=recipient@example.com
+
+# Slack
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+```
+
+#### Gmail App Passwordの取得
+
+1. Googleアカウントにログイン
+2. セキュリティ → 2段階認証を有効化
+3. 「アプリパスワード」を生成
+4. 生成されたパスワードを `SMTP_PASS` に設定
+
+#### Slack Webhook URLの取得
+
+1. https://api.slack.com/apps にアクセス
+2. 「Create New App」→「From scratch」
+3. 「Incoming Webhooks」を有効化
+4. 「Add New Webhook to Workspace」でチャンネルを選択
+5. 生成されたURLを `SLACK_WEBHOOK_URL` に設定
+
+#### Morning Reportでの自動通知
+
+`scripts/morning_report.py`は自動的に通知を送信:
+
+```bash
+# 手動実行
+python scripts/morning_report.py
+
+# GitHub Actionsで毎日 9:00 JST に自動実行
+# .github/workflows/runner-dry.yml
+```
+
+通知内容:
+- **件名**: `Daily Report - YYYY-MM-DD`
+- **本文**: 総イベント数、成功/エラー数、レポートファイルパス
+
+#### 環境変数
+
+```bash
+# .env
+NOTIFY_CHANNELS=email,slack          # 通知チャネル（カンマ区切り）
+
+# Email
+SMTP_HOST=smtp.gmail.com             # SMTPサーバー
+SMTP_PORT=587                        # SMTPポート
+SMTP_USER=your-email@gmail.com       # SMTPユーザー
+SMTP_PASS=your-app-password          # SMTPパスワード
+SMTP_FROM=your-email@gmail.com       # 送信元アドレス
+SMTP_TO=recipient@example.com        # 送信先アドレス
+
+# Slack
+SLACK_WEBHOOK_URL=https://...        # Slack Webhook URL
+
+# Storage
+NOTIFICATIONS_FILE=storage/notifications.jsonl  # DRY_RUN時の記録先
+```
+
+#### テストの実行
+
+```bash
+# ダッシュボードとNotifierのテスト
+pytest tests/test_ui_notify.py -v
+
+# 特定のテストのみ
+pytest tests/test_ui_notify.py::TestDashboard -v
+pytest tests/test_ui_notify.py::TestNotifier -v
+```
+
+### DRY → 実運用への切り替え
+
+```bash
+# 1. DRY_RUNモードで動作確認
+export DRY_RUN=true
+python scripts/send_test_notification.py
+
+# 2. notifications.jsonlに記録されていることを確認
+cat storage/notifications.jsonl | jq .
+
+# 3. 通知設定を追加
+# .envファイルに NOTIFY_CHANNELS, SMTP_*, SLACK_WEBHOOK_URL を設定
+
+# 4. 実運用モードに切り替え
+export DRY_RUN=false
+
+# 5. テスト通知を送信（実際に送信される）
+python scripts/send_test_notification.py
+```
+
+---
+
 ## 開発ガイド
 
 ### 新しいアプリケーションを追加
