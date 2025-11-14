@@ -43,23 +43,17 @@ jobs:
 
           echo "✅ Basic validation passed"
 
-      - name: Auto approve PR
-        if: success()
-        uses: hmarr/auto-approve-action@v3
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      # Note: Auto-approval removed - GitHub Actions cannot approve its own PRs
+      # Manual approval is required for security
 
-      - name: Enable auto-merge
+      - name: Add ready-to-merge label
         if: success()
         run: |
-          gh pr merge ${{ github.event.pull_request.number }} --auto --squash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ラベルが存在しない場合は作成
+          gh label create "ready-to-merge" --description "Ready to be merged" --color "0E8A16" || true
 
-      - name: Add auto-merge label
-        if: success()
-        run: |
-          gh pr edit ${{ github.event.pull_request.number }} --add-label "auto-merge"
+          # PRにラベルを追加
+          gh pr edit ${{ github.event.pull_request.number }} --add-label "ready-to-merge" || echo "⚠️ Could not add label (this is ok)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -72,5 +66,5 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '✅ **自動チェック完了**\n\n基本的な検証が完了しました。問題がなければ自動的にマージされます。\n\n🤖 Powered by Claude AI'
+              body: '✅ **自動検証完了**\n\n基本的な検証が完了しました。\n\n**次のステップ:**\n1. コードレビュー\n2. 手動承認\n3. マージ\n\n🤖 Automated by Claude AI'
             })

@@ -383,6 +383,383 @@ PERPLEXITY_MAX_REQUESTS_PER_DAY=50
 PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
 ```
 
+## エージェントのLLM Router統合
+
+すべてのエージェント（Generator, Analyzer, Compliance, Scheduler, Executor）がLLM Routerと統合されました。
+**DRY_RUNモード（デフォルト）では、すべてのLLM呼び出しがモック化され、コストゼロで動作確認が可能です。**
+
+### 統合されたエージェント
+
+#### 1. Generator Agent
+**LLM機能**: コンテンツ生成（SNS投稿、メール、レポート）
+
+```python
+from agents.generator_agent import GeneratorAgent
+
+agent = GeneratorAgent()  # 自動的にLLM Routerを使用
+
+# SNS投稿を生成
+result = await agent.generate_content(
+    content_type="sns_post",
+    context={"topic": "AI Automation"},
+    style="professional"
+)
+print(result["content"])  # DRY_RUNモードではモック応答
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_generator  # コストゼロで動作確認
+```
+
+#### 2. Analyzer Agent
+**LLM機能**: データ分析結果からのインサイト生成
+
+```python
+from agents.analyzer_agent import AnalyzerAgent
+
+agent = AnalyzerAgent()  # 自動的にLLM Routerを使用
+
+# データを分析
+data = [{"date": "2024-01-01", "value": 100}, ...]
+result = await agent.analyze_data(data, analysis_type="general")
+
+print(result["insights"])  # LLMが生成したインサイト
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_analyzer  # コストゼロで動作確認
+```
+
+#### 3. Compliance Agent
+**LLM機能**: 有害コンテンツの高度な分析
+
+```python
+from agents.compliance_agent import ComplianceAgent
+
+agent = ComplianceAgent()  # 自動的にLLM Routerを使用
+
+# コンプライアンスチェック
+result = await agent.check_compliance(
+    content="Your content here",
+    compliance_type="content_policy"
+)
+
+# LLMによる詳細分析が含まれる
+if result["violations"]:
+    for v in result["violations"]:
+        print(v.get("llm_analysis", ""))
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_compliance  # コストゼロで動作確認
+```
+
+#### 4. Scheduler Agent
+**LLM機能**: タスクスケジュールの最適化提案
+
+```python
+from agents.scheduler_agent import SchedulerAgent
+
+agent = SchedulerAgent()  # 自動的にLLM Routerを使用
+
+# タスクをスケジュール
+await agent.schedule_task(task_id="task_001", task_type="sns_post", priority=8)
+
+# LLMを使ってスケジュールを最適化
+optimization = await agent.optimize_schedule()
+print(optimization["recommendations"])  # 最適化提案
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_scheduler  # コストゼロで動作確認
+```
+
+#### 5. Executor Agent
+**LLM機能**: タスク実行前の妥当性チェック
+
+```python
+from agents.executor_agent import ExecutorAgent
+
+agent = ExecutorAgent()  # 自動的にLLM Routerを使用
+
+task = {
+    "task_id": "exec_001",
+    "task_type": "api_call",
+    "params": {"url": "https://api.example.com"}
+}
+
+# LLMでタスクを検証
+validation = await agent.validate_task(task)
+print(validation["analysis"])  # 妥当性分析
+
+# タスクを実行
+if validation["validated"]:
+    result = await agent.execute_task(task)
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_executor  # コストゼロで動作確認
+```
+
+### すべてのデモを一括実行
+
+```bash
+# 全エージェントのデモを実行（DRY_RUNモード、コスト$0.00）
+python -m core.demo_generator
+python -m core.demo_analyzer
+python -m core.demo_compliance
+python -m core.demo_scheduler
+python -m core.demo_executor
+```
+
+### テストの実行
+
+```bash
+# LLM Router統合テスト（DRY_RUNモード）
+pytest tests/test_agents_llm_integration.py -v
+
+# 詳細出力付き
+pytest tests/test_agents_llm_integration.py -v -s
+
+# 特定のエージェントのみ
+pytest tests/test_agents_llm_integration.py::TestGeneratorAgentIntegration -v
+```
+
+### LLM Router統合の利点
+
+1. **ゼロコスト開発**: DRY_RUNモードでモック応答を使用
+2. **統一されたインターフェース**: すべてのエージェントが同じLLM Routerを使用
+3. **自動フォールバック**: プライマリプロバイダーが失敗時に自動切り替え
+4. **予算管理**: 日次コスト上限の設定
+5. **サーキットブレーカー**: 連続失敗時の自動停止
+6. **レート制限**: プロバイダー別のリクエスト数制限
+
+### 実API使用への切り替え
+
+開発完了後、実際のLLM APIを使用する場合:
+
+```bash
+# .env
+DRY_RUN=false                   # 実API使用
+LLM_DAILY_MAX_COST_USD=10.0     # 日次予算を設定
+```
+
+## 24時間稼働 Runner
+
+AI Multi-Agent Starter Kitには、継続的なタスク実行を管理する24時間稼働Runnerが組み込まれています。
+
+### 特徴
+
+- **DRY_RUNモード**: デフォルトでゼロコスト稼働
+- **JSONL形式ログ**: `storage/runs/*.jsonl` に実行イベントを記録
+- **自動レポート生成**: GitHub Actionsで毎日レポートを作成
+- **REST API**: `/runner/status`, `/runner/run-now` エンドポイント
+- **3種類のビルトインジョブ**:
+  - **heartbeat**: 30秒ごとに生存確認
+  - **cleanup**: 10分ごとに古いログを削除
+  - **demo**: 5分ごとにデモタスクを実行
+
+### クイックスタート
+
+```bash
+# 1. Runnerを有効化（デフォルトは無効）
+export RUNNER_ENABLED=true
+export DRY_RUN=true  # ゼロコスト稼働
+
+# 2. Runnerを起動
+python -m runner.main
+```
+
+### 環境変数
+
+```bash
+# .env
+RUNNER_ENABLED=false              # Runnerの有効化
+DRY_RUN=true                      # ゼロコストモード（推奨）
+
+# ジョブ実行間隔（秒）
+RUNNER_LOOP_INTERVAL=60           # メインループ
+RUNNER_HEARTBEAT_SECONDS=30       # Heartbeat間隔
+RUNNER_CLEANUP_SECONDS=600        # Cleanup間隔
+
+# 並列実行とエラーハンドリング
+RUNNER_MAX_CONCURRENCY=4          # 同時実行数
+RUNNER_MAX_ERRORS=5               # 連続エラー上限
+BACKOFF_BASE_SECONDS=2            # バックオフ基準（秒）
+RUNNER_MAX_BACKOFF=300            # 最大バックオフ（秒）
+
+# ウォッチドッグ
+RUNNER_WATCHDOG_ENABLED=true      # ウォッチドッグ有効化
+RUNNER_WATCHDOG_TIMEOUT=600       # タイムアウト（秒）
+
+# レート制限
+RUNNER_MAX_JOBS_PER_MINUTE=10     # 分間実行数上限
+RUNNER_MAX_JOBS_PER_HOUR=100      # 時間実行数上限
+
+# ストレージとログ
+RUNNER_LOG_DIR=storage/runs       # ログディレクトリ
+RUNNER_LOG_ROTATION_DAYS=30       # ログ保持期間（日）
+RUNNER_SHUTDOWN_TIMEOUT=30        # シャットダウンタイムアウト（秒）
+```
+
+### REST API
+
+#### GET /runner/status
+
+Runnerのステータスを取得:
+
+```bash
+curl http://localhost:8000/runner/status
+```
+
+レスポンス例:
+```json
+{
+  "enabled": true,
+  "running": true,
+  "consecutive_errors": 0,
+  "jobs_executed_last_hour": 42,
+  "registry_stats": {
+    "total_jobs": 3,
+    "enabled_jobs": 3,
+    "jobs": [
+      {
+        "name": "heartbeat",
+        "enabled": true,
+        "run_count": 120,
+        "error_count": 0
+      }
+    ]
+  }
+}
+```
+
+#### POST /runner/run-now
+
+すべてのジョブを即座に実行:
+
+```bash
+curl -X POST http://localhost:8000/runner/run-now
+```
+
+### 朝のレポート生成
+
+24時間分の実行イベントを集計してレポートを生成:
+
+```bash
+# 手動実行
+python scripts/morning_report.py
+
+# 出力
+# - storage/reports/YYYY-MM-DD.md   (Markdownレポート)
+# - storage/reports/YYYY-MM-DD.csv  (CSVデータ)
+```
+
+生成されるレポート内容:
+- **サマリー**: 総イベント数、成功/エラー数、総実行時間
+- **ジョブ別統計**: 実行回数、成功率、平均実行時間
+- **エラー詳細**: エラーが発生した場合の詳細情報
+
+### GitHub Actions自動レポート
+
+毎日 9:00 JST に自動的にレポートを生成:
+
+```yaml
+# .github/workflows/runner-dry.yml
+# - DRY_RUNモードで1分間Runnerを実行
+# - レポート生成
+# - GitHubリポジトリにコミット
+# - Issueにサマリーを投稿
+```
+
+手動実行:
+```bash
+# GitHub ActionsからWorkflowを手動実行
+Actions → Runner DRY Mode - Morning Report → Run workflow
+```
+
+### テストの実行
+
+```bash
+# Runnerのテスト（DRY_RUNモード）
+pytest tests/test_runner_dry.py -v
+
+# 特定のテストクラスのみ
+pytest tests/test_runner_dry.py::TestRunner -v
+
+# 統合テスト
+pytest tests/test_runner_dry.py::TestIntegration -v
+```
+
+### ログファイル形式
+
+すべてのジョブ実行イベントは `storage/runs/YYYY-MM-DD.jsonl` に記録:
+
+```jsonl
+{"timestamp": "2024-01-01T12:00:00", "job": "heartbeat", "status": "success", "duration_ms": 50, "dry_run": true, "result": {"status": "alive"}}
+{"timestamp": "2024-01-01T12:05:00", "job": "demo", "status": "success", "duration_ms": 120, "dry_run": true, "result": {"task_id": "demo_task_20240101_120500"}}
+```
+
+### カスタムジョブの追加
+
+新しいジョブを追加する方法:
+
+```python
+# runner/jobs.py に追加
+
+async def my_custom_job() -> Dict[str, Any]:
+    """カスタムジョブの実装"""
+    dry_run = os.getenv("DRY_RUN", "true").lower() == "true"
+
+    if dry_run:
+        # DRY_RUNモードの処理
+        return {
+            "status": "completed",
+            "mode": "DRY_RUN",
+            "cost": "$0.00",
+            "message": "Custom job completed (DRY_RUN)"
+        }
+    else:
+        # 実モードの処理
+        return {
+            "status": "completed",
+            "mode": "REAL",
+            "message": "Custom job completed"
+        }
+
+# ジョブを登録
+default_registry.register(
+    name="my_custom_job",
+    func=my_custom_job,
+    interval=3600,  # 1時間ごと
+    enabled=True,
+    description="My custom job"
+)
+```
+
+### 実稼働への移行
+
+DRY_RUNモードから実稼働に移行する場合:
+
+```bash
+# .env
+DRY_RUN=false                     # 実API使用
+RUNNER_ENABLED=true               # Runner有効化
+LLM_DAILY_MAX_COST_USD=10.0       # 日次予算を設定
+
+# Runnerを起動
+python -m runner.main
+```
+
+**注意**: 実稼働モードでは実際のLLM APIが呼ばれるため、コストが発生します。予算設定を必ず確認してください。
+
+---
+
 ## 開発ガイド
 
 ### 新しいアプリケーションを追加
@@ -596,6 +973,161 @@ print(f"プロバイダー別: {stats['by_provider']}")
 
 - **検索タスク** (`task_type="search"`): Perplexityを優先
 - **一般タスク**: 設定された優先順位に従う
+
+### 安全機能
+
+#### 1. DRY_RUNモード（ゼロコスト運用）
+
+**デフォルトで有効** - すべての外部API呼び出しをモック化し、実行コストをゼロに抑えます。
+
+```bash
+# .env
+DRY_RUN=true                    # モックレスポンスを返す（デフォルト）
+LLM_DAILY_MAX_COST_USD=0.0      # 日次予算を0に設定
+PERPLEXITY_MAX_REQUESTS_PER_DAY=0  # Perplexity無効化
+RUNNER_ENABLED=false            # バックグラウンド実行を無効化
+```
+
+**DRY_RUNモードの特徴:**
+- ✅ すべてのLLM API呼び出しがモック化される
+- ✅ 実際のAPIキーがなくても動作する
+- ✅ コストが一切発生しない
+- ✅ コード生成・検証・テストに最適
+- ✅ Claude Code (Web) のクレジットのみで開発可能
+
+**実際のAPI呼び出しに切り替える場合:**
+
+```bash
+# .env
+DRY_RUN=false                   # 実際のAPI呼び出しを有効化
+LLM_DAILY_MAX_COST_USD=5.0      # 日次予算を設定（例: $5/日）
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50  # Perplexity制限
+RUNNER_ENABLED=true             # 必要に応じてRunner有効化
+```
+
+#### 2. 日次予算管理
+
+LLMの使用コストを日次で制限します：
+
+```bash
+LLM_DAILY_MAX_COST_USD=5.0  # 1日あたり$5まで
+```
+
+予算に達すると自動的にAPI呼び出しを停止し、エラーを返します。翌日0時（UTC）に自動リセットされます。
+
+#### 3. Perplexity検索専用モード
+
+Perplexityを検索タスク専用に制限し、誤使用を防ぎます：
+
+```bash
+PERPLEXITY_SEARCH_ONLY=true  # デフォルト: true
+```
+
+この設定により、`task_type="search"` 以外でPerplexityが使用されることを防ぎます。
+
+#### 4. サーキットブレーカー
+
+プロバイダーが連続して5回失敗すると、5分間そのプロバイダーを使用停止にします。自動的に他のプロバイダーにフォールバックします。
+
+#### 5. レート制限
+
+プロバイダー別にリクエスト数を制限：
+- **Anthropic**: 50リクエスト/分
+- **Gemini**: 60リクエスト/分
+- **Perplexity**: 20リクエスト/分
+- **OpenAI**: 60リクエスト/分
+
+#### 6. メモリリーク対策
+
+24時間稼働を想定し、メモリ使用量を制限：
+- 使用履歴: 最大1,000件（約150KB）
+- リクエストタイムスタンプ: プロバイダーあたり100件
+
+#### 使用統計の確認
+
+```python
+from core import get_llm_router
+
+router = get_llm_router()
+stats = router.get_usage_stats()
+
+print(f"DRY_RUNモード: {stats['dry_run']}")
+print(f"日次コスト: {stats['daily_cost_used']} / {stats['daily_cost_limit']}")
+print(f"残り予算: {stats['budget_remaining']}")
+print(f"総リクエスト: {stats['total_requests']}")
+```
+
+## ゼロコスト運用ガイド（推奨）
+
+このプロジェクトは、**Claude Code (Web)** のクレジットのみを使用して、外部API課金なしで開発できるように設計されています。
+
+### 基本方針
+
+1. **DRY_RUN=true** をデフォルトで維持
+2. すべてのLLM呼び出しはモック化
+3. 実際のAPI呼び出しは本番環境のみ
+4. 開発・テスト・コード生成は完全無料
+
+### セットアップ手順
+
+#### 1. GitHub Codespaces で起動
+
+```bash
+# Codespaces が自動的に .env を生成（DRY_RUN=true がデフォルト）
+```
+
+#### 2. コード生成のみで開発
+
+```bash
+# Claude Code (Web) でコード生成・編集
+# すべてのエージェント実行はモック化される
+# コストゼロ
+```
+
+#### 3. 動作確認
+
+```bash
+# モックレスポンスで動作確認
+python -m core.demo_search "介護DXの最新トレンド"
+
+# API経由でも確認可能（モック）
+curl http://localhost:8000/api/v1/agents
+```
+
+#### 4. 本番環境のみ実API使用
+
+```bash
+# 本番環境の .env のみ
+DRY_RUN=false
+LLM_DAILY_MAX_COST_USD=10.0
+RUNNER_ENABLED=true
+```
+
+### ゼロコスト開発の利点
+
+- ✅ **完全無料**: 外部API課金なし
+- ✅ **高速開発**: モックレスポンスで即座に動作確認
+- ✅ **安全**: 誤ってAPIを大量消費する心配なし
+- ✅ **テスト**: 実際のAPIキーなしでテスト可能
+- ✅ **CI/CD**: GitHub Actionsでもコストゼロ
+
+### モックレスポンス例
+
+```python
+result = await llm_router.generate(
+    prompt="介護DXについて教えてください",
+    task_type="search"
+)
+
+print(result)
+# {
+#   "status": "success",
+#   "provider": "perplexity",
+#   "result": "[MOCK SEARCH RESULT]\nProvider: perplexity\n...",
+#   "dry_run": true,
+#   "cost": "$0.00"
+# }
+```
 
 ## デプロイ
 

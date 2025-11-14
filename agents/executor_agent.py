@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Any, Callable
 import structlog
 from datetime import datetime
 import asyncio
+from core import get_llm_router
 
 logger = structlog.get_logger()
 
@@ -19,12 +20,14 @@ logger = structlog.get_logger()
 class ExecutorAgent:
     """タスクを実行し、結果を管理するエージェント"""
 
-    def __init__(self, memory_store=None, tools=None):
+    def __init__(self, llm_client=None, memory_store=None, tools=None):
+        # LLM Router を使用（デフォルト）
+        self.llm = llm_client or get_llm_router()
         self.memory = memory_store
         self.tools = tools or {}
         self.execution_history = []
         self.running_tasks = {}
-        logger.info("ExecutorAgent initialized")
+        logger.info("ExecutorAgent initialized", llm_router_enabled=True)
 
     async def execute_task(
         self,
@@ -290,3 +293,60 @@ class ExecutorAgent:
             logger.info("Task cancelled", task_id=task_id)
             return True
         return False
+
+    async def validate_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """LLMを使ってタスクの妥当性をチェック"""
+        try:
+            task_id = task.get("task_id", "unknown")
+            task_type = task.get("task_type", "unknown")
+            task_params = task.get("params", {})
+
+            prompt = f"""Validate the following task before execution:
+
+Task ID: {task_id}
+Task Type: {task_type}
+Parameters: {task_params}
+
+Check for:
+1. Missing required parameters
+2. Invalid parameter values
+3. Potential security risks
+4. Resource requirements
+5. Expected execution time
+
+Provide:
+- validation_status: PASS or FAIL
+- issues: list of any problems found
+- recommendations: suggested fixes or improvements"""
+
+            # LLM Router経由で妥当性チェック（DRY_RUNモードではモック応答）
+            result = await self.llm.generate(
+                prompt=prompt,
+                max_tokens=512,
+                temperature=0.3,  # より保守的な応答
+                task_type="execute"
+            )
+
+            if result["status"] == "success":
+                return {
+                    "validated": True,
+                    "task_id": task_id,
+                    "analysis": result["result"],
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                return {
+                    "validated": False,
+                    "task_id": task_id,
+                    "error": result.get("error"),
+                    "timestamp": datetime.now().isoformat()
+                }
+
+        except Exception as e:
+            logger.error("Task validation failed", error=str(e))
+            return {
+                "validated": False,
+                "task_id": task.get("task_id", "unknown"),
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }

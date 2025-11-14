@@ -43,7 +43,8 @@ system_state = {
     "workflow": None,
     "memory": None,
     "task_router": None,
-    "apps": {}
+    "apps": {},
+    "runner": None
 }
 
 
@@ -140,6 +141,89 @@ async def health_check():
         "status": "healthy",
         "agents": list(system_state["agents"].keys()),
         "apps": list(system_state["apps"].keys()),
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.get("/runner/status")
+async def get_runner_status():
+    """
+    Runnerのステータスを取得
+
+    Returns:
+        dict: Runnerの現在の状態と統計情報
+    """
+    runner = system_state.get("runner")
+
+    if runner is None:
+        # Runnerが起動していない場合
+        return {
+            "enabled": False,
+            "running": False,
+            "message": "Runner is not initialized (RUNNER_ENABLED=false)",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    status = runner.get_status()
+    status["enabled"] = True
+    status["timestamp"] = datetime.now().isoformat()
+
+    return status
+
+
+@app.post("/runner/run-now")
+async def trigger_runner_jobs(background_tasks: BackgroundTasks):
+    """
+    即座にすべてのジョブを実行
+
+    DRY_RUNモードでのテスト用エンドポイント
+    バックグラウンドタスクとして実行
+
+    Returns:
+        dict: 実行結果の概要
+    """
+    runner = system_state.get("runner")
+
+    if runner is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Runner is not initialized (RUNNER_ENABLED=false)"
+        )
+
+    if not runner.running:
+        raise HTTPException(
+            status_code=503,
+            detail="Runner is not running"
+        )
+
+    # すべてのジョブを強制実行
+    jobs = runner.registry.list()
+
+    async def run_all_jobs():
+        """すべてのジョブを実行"""
+        results = []
+        for job in jobs:
+            try:
+                result = await job.run()
+                results.append(result)
+                logger.info("Manual job execution", job=job.name, status=result.get("status"))
+            except Exception as e:
+                logger.error("Manual job execution failed", job=job.name, error=str(e))
+                results.append({
+                    "status": "error",
+                    "job": job.name,
+                    "error": str(e)
+                })
+        return results
+
+    # バックグラウンドで実行
+    background_tasks.add_task(run_all_jobs)
+
+    return {
+        "status": "triggered",
+        "jobs_count": len(jobs),
+        "jobs": [j.name for j in jobs],
+        "message": "All jobs triggered for execution",
         "timestamp": datetime.now().isoformat()
     }
 

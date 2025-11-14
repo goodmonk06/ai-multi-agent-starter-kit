@@ -17,13 +17,43 @@ cat > /workspace/.env << EOF
 # Environment
 ENVIRONMENT=${ENVIRONMENT:-development}
 
+# Execution Mode
+# DRY_RUN mode: All external API calls are mocked (zero cost)
+DRY_RUN=${DRY_RUN:-true}
+
+# Runner Configuration
+# RUNNER_ENABLED: Set to 'false' to disable background task execution
+RUNNER_ENABLED=${RUNNER_ENABLED:-false}
+
+# Runner Job Intervals (in seconds)
+RUNNER_LOOP_INTERVAL=${RUNNER_LOOP_INTERVAL:-60}
+RUNNER_HEARTBEAT_SECONDS=${RUNNER_HEARTBEAT_SECONDS:-30}
+RUNNER_CLEANUP_SECONDS=${RUNNER_CLEANUP_SECONDS:-600}
+
+# Runner Concurrency and Error Handling
+RUNNER_MAX_CONCURRENCY=${RUNNER_MAX_CONCURRENCY:-4}
+RUNNER_MAX_ERRORS=${RUNNER_MAX_ERRORS:-5}
+BACKOFF_BASE_SECONDS=${BACKOFF_BASE_SECONDS:-2}
+RUNNER_MAX_BACKOFF=${RUNNER_MAX_BACKOFF:-300}
+
+# Runner Watchdog
+RUNNER_WATCHDOG_ENABLED=${RUNNER_WATCHDOG_ENABLED:-true}
+RUNNER_WATCHDOG_TIMEOUT=${RUNNER_WATCHDOG_TIMEOUT:-600}
+
+# Runner Rate Limiting
+RUNNER_MAX_JOBS_PER_MINUTE=${RUNNER_MAX_JOBS_PER_MINUTE:-10}
+RUNNER_MAX_JOBS_PER_HOUR=${RUNNER_MAX_JOBS_PER_HOUR:-100}
+
+# Runner Storage and Logging
+RUNNER_LOG_DIR=${RUNNER_LOG_DIR:-storage/runs}
+RUNNER_LOG_ROTATION_DAYS=${RUNNER_LOG_ROTATION_DAYS:-30}
+RUNNER_SHUTDOWN_TIMEOUT=${RUNNER_SHUTDOWN_TIMEOUT:-30}
+
 # API Keys
 OPENAI_API_KEY=${OPENAI_API_KEY}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 GEMINI_API_KEY=${GEMINI_API_KEY}
 PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
-PERPLEXITY_MAX_REQUESTS_PER_DAY=${PERPLEXITY_MAX_REQUESTS_PER_DAY:-50}
-PERPLEXITY_MAX_DOLLARS_PER_MONTH=${PERPLEXITY_MAX_DOLLARS_PER_MONTH:-5}
 
 # LLM Configuration
 # OpenAI is disabled by default (set to 'true' to enable)
@@ -32,6 +62,20 @@ OPENAI_ENABLED=${OPENAI_ENABLED:-false}
 # LLM Provider Priority (comma-separated)
 # Default: anthropic,gemini,perplexity
 LLM_PRIORITY=${LLM_PRIORITY:-anthropic,gemini,perplexity}
+
+# Perplexity Search-Only Mode (prevents usage for non-search tasks)
+PERPLEXITY_SEARCH_ONLY=${PERPLEXITY_SEARCH_ONLY:-true}
+
+# Budget and Cost Controls
+# Maximum daily cost in USD (0.0 = zero-cost mode with mocked API calls)
+LLM_DAILY_MAX_COST_USD=${LLM_DAILY_MAX_COST_USD:-0.0}
+
+# Maximum Perplexity requests per day (0 = disabled in DRY_RUN mode)
+PERPLEXITY_MAX_REQUESTS_PER_DAY=${PERPLEXITY_MAX_REQUESTS_PER_DAY:-0}
+
+# Timeout and Retry Settings
+LLM_TIMEOUT=${LLM_TIMEOUT:-60}
+LLM_MAX_RETRIES=${LLM_MAX_RETRIES:-3}
 
 # Model Selection (optional - defaults are set in llm_router.py)
 ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}

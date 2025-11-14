@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Any, Set
 import structlog
 from datetime import datetime
 import re
+from core import get_llm_router
 
 logger = structlog.get_logger()
 
@@ -20,11 +21,12 @@ class ComplianceAgent:
     """コンプライアンスチェックを実行するエージェント"""
 
     def __init__(self, llm_client=None, memory_store=None):
-        self.llm = llm_client
+        # LLM Router を使用（デフォルト）
+        self.llm = llm_client or get_llm_router()
         self.memory = memory_store
         self.rules = self._load_default_rules()
         self.blocked_patterns = self._load_blocked_patterns()
-        logger.info("ComplianceAgent initialized")
+        logger.info("ComplianceAgent initialized", llm_router_enabled=True)
 
     def _load_default_rules(self) -> Dict[str, Any]:
         """デフォルトのコンプライアンスルールを読み込む"""
@@ -239,9 +241,34 @@ class ComplianceAgent:
                 })
 
         # LLMを使った高度なチェック
-        if self.llm and violations:
-            # より詳細な分析をLLMで実行
-            pass
+        if violations:
+            try:
+                prompt = f"""Analyze the following content for compliance violations:
+
+Content: {str(content)[:500]}
+
+Detected keywords: {[v['keyword'] for v in violations]}
+
+Please provide a detailed assessment:
+1. Is the content actually harmful or is it a false positive?
+2. What is the severity level (low/medium/high/critical)?
+3. What recommendations do you have?"""
+
+                # LLM Router経由で分析（DRY_RUNモードではモック応答）
+                result = await self.llm.generate(
+                    prompt=prompt,
+                    max_tokens=512,
+                    temperature=0.3,  # より保守的な応答
+                    task_type="analyze"
+                )
+
+                if result["status"] == "success":
+                    # LLMの分析結果を追加
+                    for violation in violations:
+                        violation["llm_analysis"] = result["result"][:200]
+
+            except Exception as e:
+                logger.error("LLM compliance check failed", error=str(e))
 
         return {
             "passed": len(violations) == 0,

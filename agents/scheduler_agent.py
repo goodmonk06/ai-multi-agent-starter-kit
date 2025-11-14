@@ -11,6 +11,7 @@ Scheduler Agent - タスクのスケジューリングと管理を担当
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import structlog
+from core import get_llm_router
 
 logger = structlog.get_logger()
 
@@ -18,11 +19,13 @@ logger = structlog.get_logger()
 class SchedulerAgent:
     """タスクをスケジュールし、適切なエージェントに振り分けるエージェント"""
 
-    def __init__(self, memory_store=None):
+    def __init__(self, llm_client=None, memory_store=None):
+        # LLM Router を使用（デフォルト）
+        self.llm = llm_client or get_llm_router()
         self.memory = memory_store
         self.task_queue = []
         self.scheduled_tasks = {}
-        logger.info("SchedulerAgent initialized")
+        logger.info("SchedulerAgent initialized", llm_router_enabled=True)
 
     async def schedule_task(
         self,
@@ -124,3 +127,64 @@ class SchedulerAgent:
             ),
         }
         return stats
+
+    async def optimize_schedule(self) -> Dict[str, Any]:
+        """LLMを使ってスケジュールを最適化"""
+        if not self.task_queue:
+            return {"message": "No tasks to optimize", "optimized": False}
+
+        try:
+            # タスクキューの情報を要約
+            task_summary = []
+            for task in self.task_queue[:10]:  # 最大10タスク
+                task_summary.append({
+                    "id": task["task_id"],
+                    "type": task["task_type"],
+                    "priority": task["priority"],
+                    "deadline": task["deadline"].isoformat() if task["deadline"] else "None"
+                })
+
+            prompt = f"""Analyze the following task queue and suggest optimal execution order:
+
+Tasks: {task_summary}
+
+Consider:
+1. Priority levels (1-10, higher is more urgent)
+2. Deadlines
+3. Task dependencies
+4. Resource efficiency
+
+Provide recommendations for:
+- Which tasks should be executed first
+- Any potential bottlenecks
+- Suggested priority adjustments"""
+
+            # LLM Router経由で最適化提案（DRY_RUNモードではモック応答）
+            result = await self.llm.generate(
+                prompt=prompt,
+                max_tokens=512,
+                temperature=0.7,
+                task_type="plan"
+            )
+
+            if result["status"] == "success":
+                return {
+                    "optimized": True,
+                    "recommendations": result["result"],
+                    "task_count": len(self.task_queue),
+                    "timestamp": datetime.now().isoformat()
+                }
+            else:
+                return {
+                    "optimized": False,
+                    "error": result.get("error"),
+                    "task_count": len(self.task_queue)
+                }
+
+        except Exception as e:
+            logger.error("Schedule optimization failed", error=str(e))
+            return {
+                "optimized": False,
+                "error": str(e),
+                "task_count": len(self.task_queue)
+            }

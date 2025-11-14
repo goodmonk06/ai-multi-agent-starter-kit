@@ -1,0 +1,164 @@
+name: Runner DRY Mode - Morning Report
+
+on:
+  # 毎日 9:00 JST (00:00 UTC) に実行
+  schedule:
+    - cron: '0 0 * * *'
+
+  # 手動実行も可能
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: '集計する時間範囲（時間）'
+        required: false
+        default: '24'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  morning-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create storage directories
+        run: |
+          mkdir -p storage/runs
+          mkdir -p storage/reports
+
+      - name: Run DRY mode runner (1 hour test)
+        env:
+          DRY_RUN: 'true'
+          RUNNER_ENABLED: 'true'
+          RUNNER_LOOP_INTERVAL: '5'
+          RUNNER_HEARTBEAT_SECONDS: '10'
+          RUNNER_CLEANUP_SECONDS: '30'
+          RUNNER_MAX_CONCURRENCY: '4'
+          BACKOFF_BASE_SECONDS: '2'
+        run: |
+          echo "🔵 Starting runner in DRY_RUN mode for testing..."
+
+          # バックグラウンドでRunnerを起動
+          timeout 60 python -m runner.main &
+          RUNNER_PID=$!
+
+          echo "Runner started (PID: $RUNNER_PID)"
+
+          # 60秒間実行
+          sleep 60
+
+          # Runnerを停止（既にタイムアウトで終了している）
+          echo "✅ DRY_RUN test completed"
+
+      - name: Generate morning report
+        run: |
+          echo "📊 Generating morning report..."
+          python scripts/morning_report.py
+
+      - name: Check if reports were generated
+        id: check_reports
+        run: |
+          REPORT_DATE=$(date +%Y-%m-%d)
+          if [ -f "storage/reports/${REPORT_DATE}.md" ]; then
+            echo "report_exists=true" >> $GITHUB_OUTPUT
+            echo "report_date=${REPORT_DATE}" >> $GITHUB_OUTPUT
+          else
+            echo "report_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Display report summary
+        if: steps.check_reports.outputs.report_exists == 'true'
+        run: |
+          REPORT_DATE="${{ steps.check_reports.outputs.report_date }}"
+          echo "📄 Report generated: storage/reports/${REPORT_DATE}.md"
+          echo ""
+          echo "--- Report Content ---"
+          head -n 30 "storage/reports/${REPORT_DATE}.md"
+          echo ""
+          echo "--- CSV Summary ---"
+          wc -l "storage/reports/${REPORT_DATE}.csv"
+
+      - name: Commit and push reports
+        if: steps.check_reports.outputs.report_exists == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          REPORT_DATE="${{ steps.check_reports.outputs.report_date }}"
+
+          git add storage/runs/*.jsonl || true
+          git add storage/reports/${REPORT_DATE}.md
+          git add storage/reports/${REPORT_DATE}.csv
+
+          git commit -m "chore: add morning report for ${REPORT_DATE}" || echo "No changes to commit"
+
+          git push origin main || echo "Push failed (this is expected for forks)"
+
+      - name: Create Issue with Report Summary
+        if: steps.check_reports.outputs.report_exists == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportDate = '${{ steps.check_reports.outputs.report_date }}';
+            const reportPath = `storage/reports/${reportDate}.md`;
+
+            let reportContent = '';
+            try {
+              reportContent = fs.readFileSync(reportPath, 'utf8');
+            } catch (error) {
+              console.log('Could not read report file:', error);
+              return;
+            }
+
+            // レポートの最初の部分を抽出（最大3000文字）
+            const reportSummary = reportContent.substring(0, 3000);
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📊 Morning Report - ${reportDate}`,
+              body: reportSummary + '\n\n---\n\n*自動生成されたレポート*',
+              labels: ['report', 'automated']
+            });
+
+      - name: Upload reports as artifacts
+        if: steps.check_reports.outputs.report_exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-report-${{ steps.check_reports.outputs.report_date }}
+          path: |
+            storage/reports/*.md
+            storage/reports/*.csv
+            storage/runs/*.jsonl
+          retention-days: 30
+
+      - name: Workflow summary
+        run: |
+          echo "## 📊 Morning Report Workflow" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Completed" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check_reports.outputs.report_exists }}" == "true" ]; then
+            echo "**Reports Generated:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Markdown: storage/reports/${{ steps.check_reports.outputs.report_date }}.md" >> $GITHUB_STEP_SUMMARY
+            echo "- CSV: storage/reports/${{ steps.check_reports.outputs.report_date }}.csv" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No reports generated (no events found)" >> $GITHUB_STEP_SUMMARY
+          fi
