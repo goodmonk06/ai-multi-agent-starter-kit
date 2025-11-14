@@ -383,6 +383,172 @@ PERPLEXITY_MAX_REQUESTS_PER_DAY=50
 PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
 ```
 
+## エージェントのLLM Router統合
+
+すべてのエージェント（Generator, Analyzer, Compliance, Scheduler, Executor）がLLM Routerと統合されました。
+**DRY_RUNモード（デフォルト）では、すべてのLLM呼び出しがモック化され、コストゼロで動作確認が可能です。**
+
+### 統合されたエージェント
+
+#### 1. Generator Agent
+**LLM機能**: コンテンツ生成（SNS投稿、メール、レポート）
+
+```python
+from agents.generator_agent import GeneratorAgent
+
+agent = GeneratorAgent()  # 自動的にLLM Routerを使用
+
+# SNS投稿を生成
+result = await agent.generate_content(
+    content_type="sns_post",
+    context={"topic": "AI Automation"},
+    style="professional"
+)
+print(result["content"])  # DRY_RUNモードではモック応答
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_generator  # コストゼロで動作確認
+```
+
+#### 2. Analyzer Agent
+**LLM機能**: データ分析結果からのインサイト生成
+
+```python
+from agents.analyzer_agent import AnalyzerAgent
+
+agent = AnalyzerAgent()  # 自動的にLLM Routerを使用
+
+# データを分析
+data = [{"date": "2024-01-01", "value": 100}, ...]
+result = await agent.analyze_data(data, analysis_type="general")
+
+print(result["insights"])  # LLMが生成したインサイト
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_analyzer  # コストゼロで動作確認
+```
+
+#### 3. Compliance Agent
+**LLM機能**: 有害コンテンツの高度な分析
+
+```python
+from agents.compliance_agent import ComplianceAgent
+
+agent = ComplianceAgent()  # 自動的にLLM Routerを使用
+
+# コンプライアンスチェック
+result = await agent.check_compliance(
+    content="Your content here",
+    compliance_type="content_policy"
+)
+
+# LLMによる詳細分析が含まれる
+if result["violations"]:
+    for v in result["violations"]:
+        print(v.get("llm_analysis", ""))
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_compliance  # コストゼロで動作確認
+```
+
+#### 4. Scheduler Agent
+**LLM機能**: タスクスケジュールの最適化提案
+
+```python
+from agents.scheduler_agent import SchedulerAgent
+
+agent = SchedulerAgent()  # 自動的にLLM Routerを使用
+
+# タスクをスケジュール
+await agent.schedule_task(task_id="task_001", task_type="sns_post", priority=8)
+
+# LLMを使ってスケジュールを最適化
+optimization = await agent.optimize_schedule()
+print(optimization["recommendations"])  # 最適化提案
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_scheduler  # コストゼロで動作確認
+```
+
+#### 5. Executor Agent
+**LLM機能**: タスク実行前の妥当性チェック
+
+```python
+from agents.executor_agent import ExecutorAgent
+
+agent = ExecutorAgent()  # 自動的にLLM Routerを使用
+
+task = {
+    "task_id": "exec_001",
+    "task_type": "api_call",
+    "params": {"url": "https://api.example.com"}
+}
+
+# LLMでタスクを検証
+validation = await agent.validate_task(task)
+print(validation["analysis"])  # 妥当性分析
+
+# タスクを実行
+if validation["validated"]:
+    result = await agent.execute_task(task)
+```
+
+**デモスクリプト**:
+```bash
+python -m core.demo_executor  # コストゼロで動作確認
+```
+
+### すべてのデモを一括実行
+
+```bash
+# 全エージェントのデモを実行（DRY_RUNモード、コスト$0.00）
+python -m core.demo_generator
+python -m core.demo_analyzer
+python -m core.demo_compliance
+python -m core.demo_scheduler
+python -m core.demo_executor
+```
+
+### テストの実行
+
+```bash
+# LLM Router統合テスト（DRY_RUNモード）
+pytest tests/test_agents_llm_integration.py -v
+
+# 詳細出力付き
+pytest tests/test_agents_llm_integration.py -v -s
+
+# 特定のエージェントのみ
+pytest tests/test_agents_llm_integration.py::TestGeneratorAgentIntegration -v
+```
+
+### LLM Router統合の利点
+
+1. **ゼロコスト開発**: DRY_RUNモードでモック応答を使用
+2. **統一されたインターフェース**: すべてのエージェントが同じLLM Routerを使用
+3. **自動フォールバック**: プライマリプロバイダーが失敗時に自動切り替え
+4. **予算管理**: 日次コスト上限の設定
+5. **サーキットブレーカー**: 連続失敗時の自動停止
+6. **レート制限**: プロバイダー別のリクエスト数制限
+
+### 実API使用への切り替え
+
+開発完了後、実際のLLM APIを使用する場合:
+
+```bash
+# .env
+DRY_RUN=false                   # 実API使用
+LLM_DAILY_MAX_COST_USD=10.0     # 日次予算を設定
+```
+
 ## 開発ガイド
 
 ### 新しいアプリケーションを追加

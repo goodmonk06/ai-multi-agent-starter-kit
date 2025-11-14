@@ -11,6 +11,7 @@ Generator Agent - コンテンツ生成とレスポンス作成を担当
 from typing import Dict, List, Optional, Any
 import structlog
 from datetime import datetime
+from core import get_llm_router
 
 logger = structlog.get_logger()
 
@@ -19,10 +20,11 @@ class GeneratorAgent:
     """コンテンツを生成するエージェント"""
 
     def __init__(self, llm_client=None, memory_store=None):
-        self.llm = llm_client
+        # LLM Router を使用（デフォルト）
+        self.llm = llm_client or get_llm_router()
         self.memory = memory_store
         self.templates = {}
-        logger.info("GeneratorAgent initialized")
+        logger.info("GeneratorAgent initialized", llm_router_enabled=True)
 
     async def generate_content(
         self,
@@ -217,15 +219,25 @@ Include:
         max_length: Optional[int] = None
     ) -> str:
         """LLMを呼び出してコンテンツを生成"""
-        # LLMクライアントが設定されていれば実際に呼び出す
-        if self.llm:
-            # 実際の実装では、OpenAI/Anthropic APIを呼び出す
-            # response = await self.llm.generate(prompt, max_tokens=max_length)
-            # return response
-            pass
+        try:
+            # LLM Router経由で生成（DRY_RUNモードではモック応答）
+            result = await self.llm.generate(
+                prompt=prompt,
+                max_tokens=max_length or 2048,
+                temperature=0.7,
+                task_type="generate"
+            )
 
-        # フォールバック: テンプレートベースの生成
-        return f"[Generated content based on: {prompt[:100]}...]"
+            if result["status"] == "success":
+                return result["result"]
+            else:
+                logger.warning("LLM generation failed", error=result.get("error"))
+                return f"[Generation failed: {result.get('error')}]"
+
+        except Exception as e:
+            logger.error("LLM call failed", error=str(e))
+            # フォールバック: テンプレートベースの生成
+            return f"[Generated content based on: {prompt[:100]}...]"
 
     def _extract_hashtags(self, text: str) -> List[str]:
         """テキストからハッシュタグを抽出"""

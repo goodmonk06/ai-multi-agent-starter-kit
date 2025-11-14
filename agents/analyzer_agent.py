@@ -12,6 +12,7 @@ from typing import Dict, List, Optional, Any
 import structlog
 import pandas as pd
 from datetime import datetime
+from core import get_llm_router
 
 logger = structlog.get_logger()
 
@@ -20,9 +21,10 @@ class AnalyzerAgent:
     """データを分析し、インサイトを提供するエージェント"""
 
     def __init__(self, llm_client=None, memory_store=None):
-        self.llm = llm_client
+        # LLM Router を使用（デフォルト）
+        self.llm = llm_client or get_llm_router()
         self.memory = memory_store
-        logger.info("AnalyzerAgent initialized")
+        logger.info("AnalyzerAgent initialized", llm_router_enabled=True)
 
     async def analyze_data(
         self,
@@ -151,13 +153,41 @@ class AnalyzerAgent:
         """LLMを使ってインサイトを生成"""
         insights = []
 
-        # データの要約をLLMに渡してインサイトを生成
-        summary = f"Data summary: {len(df)} records, columns: {list(df.columns)}"
+        try:
+            # データの要約をLLMに渡してインサイトを生成
+            summary_stats = df.describe().to_dict() if not df.empty else {}
+            summary = f"""Analyze the following data summary and provide key insights:
 
-        if self.llm:
-            # LLM呼び出しのプレースホルダー
-            # 実際の実装では、OpenAI/Anthropic APIを呼び出す
-            insights.append("Data contains meaningful patterns for analysis")
+Records: {len(df)}
+Columns: {list(df.columns)}
+Summary Statistics: {summary_stats}
+
+Please provide 3-5 key insights about this data."""
+
+            # LLM Router経由で分析（DRY_RUNモードではモック応答）
+            result = await self.llm.generate(
+                prompt=summary,
+                max_tokens=512,
+                temperature=0.7,
+                task_type="analyze"
+            )
+
+            if result["status"] == "success":
+                # 応答をinsightsリストに分解
+                response_text = result["result"]
+                # 簡単な分解（行ごと）
+                insights = [
+                    line.strip()
+                    for line in response_text.split('\n')
+                    if line.strip() and not line.strip().startswith('[')
+                ][:5]  # 最大5件
+
+            if not insights:
+                insights.append("Data contains meaningful patterns for analysis")
+
+        except Exception as e:
+            logger.error("Insight generation failed", error=str(e))
+            insights.append("Data analysis completed (insight generation unavailable)")
 
         return insights
 
