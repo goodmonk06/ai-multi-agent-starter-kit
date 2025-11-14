@@ -8,6 +8,8 @@ AI Multi-Agent Starter Kitは、LangGraphをベースにした多エージェン
 
 ### 主な特徴
 
+- **クラウドファースト開発**: GitHub Codespaces でローカル環境不要
+- **完全自動セットアップ**: API キーは GitHub Secrets から自動注入
 - **モジュラーアーキテクチャ**: apps/配下に新しいアプリケーションを簡単に追加可能
 - **LangGraphベース**: 強力なワークフローエンジン
 - **共有メモリ**: エージェント間でデータを共有
@@ -19,6 +21,10 @@ AI Multi-Agent Starter Kitは、LangGraphをベースにした多エージェン
 
 ```
 ai-multi-agent-starter-kit/
+├── .devcontainer/          # Codespaces 開発環境
+│   ├── devcontainer.json   # Dev Container 設定
+│   └── setup.sh            # 自動セットアップスクリプト
+│
 ├── agents/                 # 専門エージェント
 │   ├── scheduler_agent.py  # タスクスケジューリング
 │   ├── analyzer_agent.py   # データ分析
@@ -32,6 +38,7 @@ ai-multi-agent-starter-kit/
 │   ├── memory.py           # 共有メモリストア
 │   ├── task_router.py      # タスクルーター
 │   ├── tools.py            # 共通ツール
+│   ├── demo_search.py      # SearchAgent デモスクリプト
 │   └── tools/
 │       └── perplexity_search.py  # Perplexity API統合
 │
@@ -46,9 +53,12 @@ ai-multi-agent-starter-kit/
 │
 ├── docker/                 # Docker設定
 │   ├── Dockerfile
-│   └── docker-compose.yml
+│   ├── docker-compose.yml  # 本番環境用
+│   └── compose.dev.yml     # 開発環境用（Codespaces）
 │
 └── .github/workflows/      # CI/CD
+    ├── auto-merge.yml      # 自動マージ（claude/* ブランチ）
+    ├── codespaces-test.yml # Codespaces テスト
     ├── nightly-run.yml     # 夜間自動実行
     ├── codegen.yml         # コード自動生成
     └── deploy.yml          # 自動デプロイ
@@ -56,7 +66,74 @@ ai-multi-agent-starter-kit/
 
 ## クイックスタート
 
-### 1. 環境セットアップ
+### 推奨: GitHub Codespaces で始める（ローカル環境不要）
+
+**最も簡単な方法** - ローカルに何もインストールせず、クラウド上で即座に開発を開始できます。
+
+#### 1. GitHub Secrets を設定
+
+リポジトリの Settings → Secrets and variables → Codespaces で以下のシークレットを追加：
+
+```
+OPENAI_API_KEY=your-openai-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
+PERPLEXITY_API_KEY=your-perplexity-api-key
+GEMINI_API_KEY=your-gemini-api-key
+
+# オプション: Perplexity制限設定
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50
+PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
+
+# データベース設定
+REDIS_URL=redis://redis:6379
+DATABASE_URL=postgresql://postgres:postgres@db:5432/ai_agents
+```
+
+#### 2. Codespaces を起動
+
+1. GitHubリポジトリページで **Code** → **Codespaces** → **Create codespace on main** をクリック
+2. 自動的に開発環境がセットアップされます（約2-3分）
+3. セットアップが完了すると、`.env` ファイルが自動生成され、全てのサービスが起動可能な状態になります
+
+#### 3. サービスを起動
+
+Codespaces のターミナルで：
+
+```bash
+# 全サービスを起動（API、Redis、PostgreSQL）
+docker compose -f docker/compose.dev.yml up -d
+
+# ヘルスチェック
+curl http://localhost:8000/health
+
+# Swagger UIで動作確認
+# ポート転送されたURLにアクセス（Codespacesが自動的に通知）
+```
+
+#### 4. 開発を開始
+
+```bash
+# 検索エージェントのデモを実行
+python -m core.demo_search "AI エージェントの最新動向"
+
+# APIサーバーを起動（ホットリロード付き）
+uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
+```
+
+**環境の特徴:**
+- ✅ API キーは GitHub Secrets から自動注入（手動設定不要）
+- ✅ Python、Docker、Git、GitHub CLI がプリインストール済み
+- ✅ VS Code 拡張機能（Python、Docker、Copilot、GitLens）が自動インストール
+- ✅ ポート転送が自動設定（8000、3000、5432、6379）
+- ✅ `.env` ファイルは起動時に自動生成
+
+---
+
+### オプション: ローカル環境でセットアップ
+
+ローカルで開発したい場合は以下の手順で：
+
+#### 1. 環境セットアップ
 
 ```bash
 # リポジトリをクローン
@@ -71,18 +148,17 @@ cp .env.example .env
 pip install -r requirements.txt
 ```
 
-### 2. Dockerで起動
+#### 2. Dockerで起動
 
 ```bash
 # Docker Composeで全サービスを起動
-cd docker
-docker-compose up -d
+docker compose -f docker/compose.dev.yml up -d
 
 # ヘルスチェック
 curl http://localhost:8000/health
 ```
 
-### 3. APIサーバーを起動（開発モード）
+#### 3. APIサーバーを起動（開発モード）
 
 ```bash
 # APIサーバーを起動
@@ -361,9 +437,26 @@ async def test_my_feature():
 
 ## CI/CD
 
-### 自動テスト
+### 自動テスト（Codespaces Test）
 
 プルリクエストやプッシュ時に自動的にテストが実行されます。
+
+**`.github/workflows/codespaces-test.yml`** が以下をチェック：
+- Python 構文チェック
+- モジュールインポートテスト
+- エージェント初期化テスト
+- API サーバー起動テスト
+- Docker Compose 設定検証
+
+### 自動マージ（Claude PR用）
+
+**`.github/workflows/auto-merge.yml`** が `claude/*` ブランチのPRを自動処理：
+1. 基本的な検証テストを実行
+2. PRを自動承認
+3. Auto-merge を有効化（squash merge）
+4. コメントを追加
+
+**対象**: `claude/` で始まるブランチ名のPRのみ
 
 ### 夜間自動実行
 
@@ -377,22 +470,44 @@ mainブランチへのマージ時に自動的に本番環境にデプロイさ�
 
 ### 環境変数
 
-`.env`ファイルで以下の環境変数を設定：
+#### Codespaces の場合（推奨）
+
+**自動生成**: GitHub Secrets から `.env` ファイルが自動生成されます。
+
+リポジトリの **Settings → Secrets and variables → Codespaces** で設定：
+- `OPENAI_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `PERPLEXITY_API_KEY`
+- `GEMINI_API_KEY`
+- `PERPLEXITY_MAX_REQUESTS_PER_DAY` (デフォルト: 50)
+- `PERPLEXITY_MAX_DOLLARS_PER_MONTH` (デフォルト: 5)
+
+#### ローカル環境の場合
+
+`.env`ファイルを手動で作成：
 
 ```bash
 # API Keys
 OPENAI_API_KEY=your-key
 ANTHROPIC_API_KEY=your-key
+PERPLEXITY_API_KEY=your-perplexity-key
+GEMINI_API_KEY=your-gemini-key
 
 # Database
-DATABASE_URL=postgresql://...
-REDIS_URL=redis://...
+DATABASE_URL=postgresql://postgres:postgres@db:5432/ai_agents
+REDIS_URL=redis://redis:6379
+
+# Perplexity Usage Limits
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50
+PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
 
 # Applications
 CARE_SCHEDULER_ENABLED=true
 SNS_AUTO_ENABLED=true
 HR_MATCHING_ENABLED=true
 ```
+
+**注意**: `.env` ファイルは `.gitignore` に含まれています。API キーは絶対にコミットしないでください。
 
 ## デプロイ
 
