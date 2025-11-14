@@ -33,6 +33,13 @@ OPENAI_ENABLED=${OPENAI_ENABLED:-false}
 # Default: anthropic,gemini,perplexity
 LLM_PRIORITY=${LLM_PRIORITY:-anthropic,gemini,perplexity}
 
+# Perplexity Search-Only Mode (prevents usage for non-search tasks)
+PERPLEXITY_SEARCH_ONLY=${PERPLEXITY_SEARCH_ONLY:-true}
+
+# Timeout and Retry Settings
+LLM_TIMEOUT=${LLM_TIMEOUT:-60}
+LLM_MAX_RETRIES=${LLM_MAX_RETRIES:-3}
+
 # Model Selection (optional - defaults are set in llm_router.py)
 ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-20241022}
 ANTHROPIC_MAX_TOKENS=${ANTHROPIC_MAX_TOKENS:-4096}
