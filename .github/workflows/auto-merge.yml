@@ -49,7 +49,11 @@ jobs:
       - name: Add ready-to-merge label
         if: success()
         run: |
-          gh pr edit ${{ github.event.pull_request.number }} --add-label "ready-to-merge"
+          # ラベルが存在しない場合は作成
+          gh label create "ready-to-merge" --description "Ready to be merged" --color "0E8A16" || true
+
+          # PRにラベルを追加
+          gh pr edit ${{ github.event.pull_request.number }} --add-label "ready-to-merge" || echo "⚠️ Could not add label (this is ok)"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
