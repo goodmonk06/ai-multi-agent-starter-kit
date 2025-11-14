@@ -7,6 +7,7 @@ This module contains specialized agents for different tasks:
 - generator_agent: Generate content and responses
 - compliance_agent: Check compliance and regulations
 - executor_agent: Execute tasks and workflows
+- search_agent: Web search using Perplexity API
 """
 
 from .scheduler_agent import SchedulerAgent
@@ -14,6 +15,7 @@ from .analyzer_agent import AnalyzerAgent
 from .generator_agent import GeneratorAgent
 from .compliance_agent import ComplianceAgent
 from .executor_agent import ExecutorAgent
+from .search_agent import SearchAgent
 
 __all__ = [
     "SchedulerAgent",
@@ -21,4 +23,5 @@ __all__ = [
     "GeneratorAgent",
     "ComplianceAgent",
     "ExecutorAgent",
+    "SearchAgent",
 ]

@@ -8,6 +8,8 @@ AI Multi-Agent Starter Kitは、LangGraphをベースにした多エージェン
 
 ### 主な特徴
 
+- **クラウドファースト開発**: GitHub Codespaces でローカル環境不要
+- **完全自動セットアップ**: API キーは GitHub Secrets から自動注入
 - **モジュラーアーキテクチャ**: apps/配下に新しいアプリケーションを簡単に追加可能
 - **LangGraphベース**: 強力なワークフローエンジン
 - **共有メモリ**: エージェント間でデータを共有
@@ -19,18 +21,26 @@ AI Multi-Agent Starter Kitは、LangGraphをベースにした多エージェン
 
 ```
 ai-multi-agent-starter-kit/
+├── .devcontainer/          # Codespaces 開発環境
+│   ├── devcontainer.json   # Dev Container 設定
+│   └── setup.sh            # 自動セットアップスクリプト
+│
 ├── agents/                 # 専門エージェント
 │   ├── scheduler_agent.py  # タスクスケジューリング
 │   ├── analyzer_agent.py   # データ分析
 │   ├── generator_agent.py  # コンテンツ生成
 │   ├── compliance_agent.py # コンプライアンスチェック
-│   └── executor_agent.py   # タスク実行
+│   ├── executor_agent.py   # タスク実行
+│   └── search_agent.py     # Web検索（Perplexity）
 │
 ├── core/                   # コアインフラ
 │   ├── workflow.py         # LangGraphワークフロー
 │   ├── memory.py           # 共有メモリストア
 │   ├── task_router.py      # タスクルーター
-│   └── tools.py            # 共通ツール
+│   ├── tools.py            # 共通ツール
+│   ├── demo_search.py      # SearchAgent デモスクリプト
+│   └── tools/
+│       └── perplexity_search.py  # Perplexity API統合
 │
 ├── apps/                   # ビジネスアプリケーション
 │   ├── care_scheduler/     # 福祉DX
@@ -43,9 +53,12 @@ ai-multi-agent-starter-kit/
 │
 ├── docker/                 # Docker設定
 │   ├── Dockerfile
-│   └── docker-compose.yml
+│   ├── docker-compose.yml  # 本番環境用
+│   └── compose.dev.yml     # 開発環境用（Codespaces）
 │
 └── .github/workflows/      # CI/CD
+    ├── auto-merge.yml      # 自動マージ（claude/* ブランチ）
+    ├── codespaces-test.yml # Codespaces テスト
     ├── nightly-run.yml     # 夜間自動実行
     ├── codegen.yml         # コード自動生成
     └── deploy.yml          # 自動デプロイ
@@ -53,7 +66,79 @@ ai-multi-agent-starter-kit/
 
 ## クイックスタート
 
-### 1. 環境セットアップ
+### 推奨: GitHub Codespaces で始める（ローカル環境不要）
+
+**最も簡単な方法** - ローカルに何もインストールせず、クラウド上で即座に開発を開始できます。
+
+#### 1. GitHub Secrets を設定
+
+リポジトリの Settings → Secrets and variables → Codespaces で以下のシークレットを追加：
+
+```
+# API Keys
+OPENAI_API_KEY=your-openai-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
+GEMINI_API_KEY=your-gemini-api-key
+PERPLEXITY_API_KEY=your-perplexity-api-key
+
+# LLM設定
+OPENAI_ENABLED=false  # デフォルトで無効
+LLM_PRIORITY=anthropic,gemini,perplexity  # 優先順位
+
+# オプション: Perplexity制限設定
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50
+PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
+
+# データベース設定
+REDIS_URL=redis://redis:6379
+DATABASE_URL=postgresql://postgres:postgres@db:5432/ai_agents
+```
+
+#### 2. Codespaces を起動
+
+1. GitHubリポジトリページで **Code** → **Codespaces** → **Create codespace on main** をクリック
+2. 自動的に開発環境がセットアップされます（約2-3分）
+3. セットアップが完了すると、`.env` ファイルが自動生成され、全てのサービスが起動可能な状態になります
+
+#### 3. サービスを起動
+
+Codespaces のターミナルで：
+
+```bash
+# 全サービスを起動（API、Redis、PostgreSQL）
+docker compose -f docker/compose.dev.yml up -d
+
+# ヘルスチェック
+curl http://localhost:8000/health
+
+# Swagger UIで動作確認
+# ポート転送されたURLにアクセス（Codespacesが自動的に通知）
+```
+
+#### 4. 開発を開始
+
+```bash
+# 検索エージェントのデモを実行
+python -m core.demo_search "AI エージェントの最新動向"
+
+# APIサーバーを起動（ホットリロード付き）
+uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
+```
+
+**環境の特徴:**
+- ✅ API キーは GitHub Secrets から自動注入（手動設定不要）
+- ✅ Python、Docker、Git、GitHub CLI がプリインストール済み
+- ✅ VS Code 拡張機能（Python、Docker、Copilot、GitLens）が自動インストール
+- ✅ ポート転送が自動設定（8000、3000、5432、6379）
+- ✅ `.env` ファイルは起動時に自動生成
+
+---
+
+### オプション: ローカル環境でセットアップ
+
+ローカルで開発したい場合は以下の手順で：
+
+#### 1. 環境セットアップ
 
 ```bash
 # リポジトリをクローン
@@ -68,18 +153,17 @@ cp .env.example .env
 pip install -r requirements.txt
 ```
 
-### 2. Dockerで起動
+#### 2. Dockerで起動
 
 ```bash
 # Docker Composeで全サービスを起動
-cd docker
-docker-compose up -d
+docker compose -f docker/compose.dev.yml up -d
 
 # ヘルスチェック
 curl http://localhost:8000/health
 ```
 
-### 3. APIサーバーを起動（開発モード）
+#### 3. APIサーバーを起動（開発モード）
 
 ```bash
 # APIサーバーを起動
@@ -236,6 +320,69 @@ matches = await app.match_candidates(
 - ワークフローの調整
 - 外部APIの呼び出し
 
+### Search Agent
+- Perplexity APIを使った高品質なWeb検索
+- リアルタイム情報の取得
+- 検索結果の要約と構造化
+- 1日のリクエスト数・月額利用額の制限管理
+
+## Search Agent の使い方
+
+### デモスクリプトを実行
+
+```bash
+# シンプルな検索
+python -m core.demo_search "介護DXの最新トレンド"
+
+# 最大トークン数を指定
+python -m core.demo_search "AI エージェント 活用事例" --max-tokens 1024
+
+# 複数検索デモ
+python -m core.demo_search --mode multi
+
+# トピック検索デモ
+python -m core.demo_search "福祉DX" --mode topic
+
+# ワークフロー統合デモ
+python -m core.demo_search "介護業界の課題" --mode workflow
+```
+
+### Pythonコードで使用
+
+```python
+import asyncio
+from agents import SearchAgent
+from core import MemoryStore
+
+async def main():
+    memory = MemoryStore()
+    search_agent = SearchAgent(memory_store=memory)
+
+    # 検索を実行
+    result = await search_agent.search(
+        query="介護DXの最新トレンド",
+        max_tokens=512
+    )
+
+    print(result["result"])
+
+    # 使用統計を確認
+    stats = await search_agent.get_usage_stats()
+    print(f"Daily requests: {stats['perplexity_usage']['daily_requests']}")
+    print(f"Monthly cost: ${stats['perplexity_usage']['monthly_cost']:.4f}")
+
+asyncio.run(main())
+```
+
+### 環境変数の設定
+
+```bash
+# .envファイルに以下を設定
+PERPLEXITY_API_KEY=your-actual-api-key
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50
+PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
+```
+
 ## 開発ガイド
 
 ### 新しいアプリケーションを追加
@@ -295,9 +442,26 @@ async def test_my_feature():
 
 ## CI/CD
 
-### 自動テスト
+### 自動テスト（Codespaces Test）
 
 プルリクエストやプッシュ時に自動的にテストが実行されます。
+
+**`.github/workflows/codespaces-test.yml`** が以下をチェック：
+- Python 構文チェック
+- モジュールインポートテスト
+- エージェント初期化テスト
+- API サーバー起動テスト
+- Docker Compose 設定検証
+
+### 自動マージ（Claude PR用）
+
+**`.github/workflows/auto-merge.yml`** が `claude/*` ブランチのPRを自動処理：
+1. 基本的な検証テストを実行
+2. PRを自動承認
+3. Auto-merge を有効化（squash merge）
+4. コメントを追加
+
+**対象**: `claude/` で始まるブランチ名のPRのみ
 
 ### 夜間自動実行
 
@@ -311,22 +475,127 @@ mainブランチへのマージ時に自動的に本番環境にデプロイさ�
 
 ### 環境変数
 
-`.env`ファイルで以下の環境変数を設定：
+#### Codespaces の場合（推奨）
+
+**自動生成**: GitHub Secrets から `.env` ファイルが自動生成されます。
+
+リポジトリの **Settings → Secrets and variables → Codespaces** で設定：
+- `OPENAI_API_KEY` (オプション - デフォルトで無効)
+- `ANTHROPIC_API_KEY` (推奨 - 優先順位1位)
+- `GEMINI_API_KEY` (推奨 - 優先順位2位)
+- `PERPLEXITY_API_KEY` (推奨 - 優先順位3位)
+- `OPENAI_ENABLED` (デフォルト: false)
+- `LLM_PRIORITY` (デフォルト: anthropic,gemini,perplexity)
+- `PERPLEXITY_MAX_REQUESTS_PER_DAY` (デフォルト: 50)
+- `PERPLEXITY_MAX_DOLLARS_PER_MONTH` (デフォルト: 5)
+
+#### ローカル環境の場合
+
+`.env`ファイルを手動で作成：
 
 ```bash
 # API Keys
-OPENAI_API_KEY=your-key
-ANTHROPIC_API_KEY=your-key
+OPENAI_API_KEY=your-key  # オプション
+ANTHROPIC_API_KEY=your-key  # 推奨
+GEMINI_API_KEY=your-key  # 推奨
+PERPLEXITY_API_KEY=your-key  # 推奨
+
+# LLM Configuration
+OPENAI_ENABLED=false  # OpenAIをデフォルトで無効化
+LLM_PRIORITY=anthropic,gemini,perplexity  # 優先順位
+
+# Model Selection (optional)
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+GEMINI_MODEL=gemini-1.5-pro
+PERPLEXITY_MODEL=llama-3.1-sonar-large-128k-online
+OPENAI_MODEL=gpt-4
 
 # Database
-DATABASE_URL=postgresql://...
-REDIS_URL=redis://...
+DATABASE_URL=postgresql://postgres:postgres@db:5432/ai_agents
+REDIS_URL=redis://redis:6379
+
+# Perplexity Usage Limits
+PERPLEXITY_MAX_REQUESTS_PER_DAY=50
+PERPLEXITY_MAX_DOLLARS_PER_MONTH=5
 
 # Applications
 CARE_SCHEDULER_ENABLED=true
 SNS_AUTO_ENABLED=true
 HR_MATCHING_ENABLED=true
 ```
+
+**注意**: `.env` ファイルは `.gitignore` に含まれています。API キーは絶対にコミットしないでください。
+
+## LLM ルーター
+
+### 概要
+
+AI Multi-Agent Starter Kitは、複数のLLMプロバイダーをサポートし、優先順位に基づいて自動的に最適なプロバイダーを選定します。
+
+### サポートするLLMプロバイダー
+
+1. **Anthropic (Claude)** - 優先順位1位（デフォルト）
+2. **Google Gemini** - 優先順位2位
+3. **Perplexity** - 優先順位3位（検索タスクで優先）
+4. **OpenAI (GPT)** - **デフォルトで無効**
+
+### 優先順位のカスタマイズ
+
+環境変数で優先順位を変更できます：
+
+```bash
+# .env または GitHub Secrets
+LLM_PRIORITY=anthropic,gemini,perplexity
+```
+
+### OpenAIの有効化
+
+OpenAIを使用する場合は、明示的に有効化が必要です：
+
+```bash
+OPENAI_ENABLED=true
+LLM_PRIORITY=openai,anthropic,gemini,perplexity
+```
+
+### 使用例
+
+```python
+from core import get_llm_router
+
+# LLMルーターを取得
+llm_router = get_llm_router()
+
+# テキスト生成
+result = await llm_router.generate(
+    prompt="介護DXの最新トレンドについて教えてください",
+    max_tokens=512,
+    temperature=0.7
+)
+
+print(result["result"])
+print(f"使用したプロバイダー: {result['provider']}")
+
+# 特定のプロバイダーを指定
+result = await llm_router.generate(
+    prompt="最新のAI技術について調べてください",
+    preferred_provider="perplexity",  # Perplexityを優先
+    task_type="search"
+)
+
+# 使用統計を確認
+stats = llm_router.get_usage_stats()
+print(f"総リクエスト数: {stats['total_requests']}")
+print(f"プロバイダー別: {stats['by_provider']}")
+```
+
+### フォールバック機能
+
+プライマリのLLMプロバイダーが利用できない場合、自動的に次の優先順位のプロバイダーにフォールバックします。
+
+### タスク別の最適化
+
+- **検索タスク** (`task_type="search"`): Perplexityを優先
+- **一般タスク**: 設定された優先順位に従う
 
 ## デプロイ
 

@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # メインアプリケーション（Codespaces開発環境）
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ai-agents-api-dev
+    volumes:
+      - ..:/workspace:cached
+      - /workspace/.venv
+    working_dir: /workspace
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - PERPLEXITY_MAX_REQUESTS_PER_DAY=${PERPLEXITY_MAX_REQUESTS_PER_DAY:-50}
+      - PERPLEXITY_MAX_DOLLARS_PER_MONTH=${PERPLEXITY_MAX_DOLLARS_PER_MONTH:-5}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/ai_agents
+      - REDIS_URL=redis://redis:6379
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    depends_on:
+      - redis
+      - db
+    networks:
+      - ai-network
+    command: >
+      sh -c "
+        echo '🚀 Starting AI Multi-Agent API Server (Dev Mode)' &&
+        pip install --upgrade pip &&
+        pip install -r requirements.txt &&
+        uvicorn api.server:app --reload --host 0.0.0.0 --port 8000
+      "
+    restart: unless-stopped
+
+  # Redis（メモリストア用）
+  redis:
+    image: redis:7-alpine
+    container_name: ai-agents-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-dev-data:/data
+    networks:
+      - ai-network
+    command: redis-server --appendonly yes --save 60 1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # PostgreSQL（永続データ用）
+  db:
+    image: postgres:15-alpine
+    container_name: ai-agents-db-dev
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ai_agents
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    networks:
+      - ai-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # UI Dashboard（将来的に追加）
+  # ui:
+  #   build:
+  #     context: ../ui/dashboard
+  #   container_name: ai-agents-ui-dev
+  #   volumes:
+  #     - ../ui/dashboard:/app:cached
+  #     - /app/node_modules
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://localhost:8000
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - ai-network
+  #   command: npm run dev
+
+volumes:
+  redis-dev-data:
+  postgres-dev-data:
+
+networks:
+  ai-network:
+    driver: bridge

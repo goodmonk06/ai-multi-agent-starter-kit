@@ -71,7 +71,8 @@ async def initialize_system():
         AnalyzerAgent,
         GeneratorAgent,
         ComplianceAgent,
-        ExecutorAgent
+        ExecutorAgent,
+        SearchAgent
     )
     from core import AgentWorkflow, MemoryStore, TaskRouter, ToolRegistry
 
@@ -85,7 +86,8 @@ async def initialize_system():
         "analyzer": AnalyzerAgent(memory_store=memory),
         "generator": GeneratorAgent(memory_store=memory),
         "compliance": ComplianceAgent(memory_store=memory),
-        "executor": ExecutorAgent(memory_store=memory)
+        "executor": ExecutorAgent(memory_store=memory),
+        "search": SearchAgent(memory_store=memory)
     }
     system_state["agents"] = agents
 
