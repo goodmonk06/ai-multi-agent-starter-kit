@@ -75,10 +75,15 @@ ai-multi-agent-starter-kit/
 リポジトリの Settings → Secrets and variables → Codespaces で以下のシークレットを追加：
 
 ```
+# API Keys
 OPENAI_API_KEY=your-openai-api-key
 ANTHROPIC_API_KEY=your-anthropic-api-key
-PERPLEXITY_API_KEY=your-perplexity-api-key
 GEMINI_API_KEY=your-gemini-api-key
+PERPLEXITY_API_KEY=your-perplexity-api-key
+
+# LLM設定
+OPENAI_ENABLED=false  # デフォルトで無効
+LLM_PRIORITY=anthropic,gemini,perplexity  # 優先順位
 
 # オプション: Perplexity制限設定
 PERPLEXITY_MAX_REQUESTS_PER_DAY=50
@@ -475,10 +480,12 @@ mainブランチへのマージ時に自動的に本番環境にデプロイさ�
 **自動生成**: GitHub Secrets から `.env` ファイルが自動生成されます。
 
 リポジトリの **Settings → Secrets and variables → Codespaces** で設定：
-- `OPENAI_API_KEY`
-- `ANTHROPIC_API_KEY`
-- `PERPLEXITY_API_KEY`
-- `GEMINI_API_KEY`
+- `OPENAI_API_KEY` (オプション - デフォルトで無効)
+- `ANTHROPIC_API_KEY` (推奨 - 優先順位1位)
+- `GEMINI_API_KEY` (推奨 - 優先順位2位)
+- `PERPLEXITY_API_KEY` (推奨 - 優先順位3位)
+- `OPENAI_ENABLED` (デフォルト: false)
+- `LLM_PRIORITY` (デフォルト: anthropic,gemini,perplexity)
 - `PERPLEXITY_MAX_REQUESTS_PER_DAY` (デフォルト: 50)
 - `PERPLEXITY_MAX_DOLLARS_PER_MONTH` (デフォルト: 5)
 
@@ -488,10 +495,20 @@ mainブランチへのマージ時に自動的に本番環境にデプロイさ�
 
 ```bash
 # API Keys
-OPENAI_API_KEY=your-key
-ANTHROPIC_API_KEY=your-key
-PERPLEXITY_API_KEY=your-perplexity-key
-GEMINI_API_KEY=your-gemini-key
+OPENAI_API_KEY=your-key  # オプション
+ANTHROPIC_API_KEY=your-key  # 推奨
+GEMINI_API_KEY=your-key  # 推奨
+PERPLEXITY_API_KEY=your-key  # 推奨
+
+# LLM Configuration
+OPENAI_ENABLED=false  # OpenAIをデフォルトで無効化
+LLM_PRIORITY=anthropic,gemini,perplexity  # 優先順位
+
+# Model Selection (optional)
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+GEMINI_MODEL=gemini-1.5-pro
+PERPLEXITY_MODEL=llama-3.1-sonar-large-128k-online
+OPENAI_MODEL=gpt-4
 
 # Database
 DATABASE_URL=postgresql://postgres:postgres@db:5432/ai_agents
@@ -508,6 +525,77 @@ HR_MATCHING_ENABLED=true
 ```
 
 **注意**: `.env` ファイルは `.gitignore` に含まれています。API キーは絶対にコミットしないでください。
+
+## LLM ルーター
+
+### 概要
+
+AI Multi-Agent Starter Kitは、複数のLLMプロバイダーをサポートし、優先順位に基づいて自動的に最適なプロバイダーを選定します。
+
+### サポートするLLMプロバイダー
+
+1. **Anthropic (Claude)** - 優先順位1位（デフォルト）
+2. **Google Gemini** - 優先順位2位
+3. **Perplexity** - 優先順位3位（検索タスクで優先）
+4. **OpenAI (GPT)** - **デフォルトで無効**
+
+### 優先順位のカスタマイズ
+
+環境変数で優先順位を変更できます：
+
+```bash
+# .env または GitHub Secrets
+LLM_PRIORITY=anthropic,gemini,perplexity
+```
+
+### OpenAIの有効化
+
+OpenAIを使用する場合は、明示的に有効化が必要です：
+
+```bash
+OPENAI_ENABLED=true
+LLM_PRIORITY=openai,anthropic,gemini,perplexity
+```
+
+### 使用例
+
+```python
+from core import get_llm_router
+
+# LLMルーターを取得
+llm_router = get_llm_router()
+
+# テキスト生成
+result = await llm_router.generate(
+    prompt="介護DXの最新トレンドについて教えてください",
+    max_tokens=512,
+    temperature=0.7
+)
+
+print(result["result"])
+print(f"使用したプロバイダー: {result['provider']}")
+
+# 特定のプロバイダーを指定
+result = await llm_router.generate(
+    prompt="最新のAI技術について調べてください",
+    preferred_provider="perplexity",  # Perplexityを優先
+    task_type="search"
+)
+
+# 使用統計を確認
+stats = llm_router.get_usage_stats()
+print(f"総リクエスト数: {stats['total_requests']}")
+print(f"プロバイダー別: {stats['by_provider']}")
+```
+
+### フォールバック機能
+
+プライマリのLLMプロバイダーが利用できない場合、自動的に次の優先順位のプロバイダーにフォールバックします。
+
+### タスク別の最適化
+
+- **検索タスク** (`task_type="search"`): Perplexityを優先
+- **一般タスク**: 設定された優先順位に従う
 
 ## デプロイ
 
