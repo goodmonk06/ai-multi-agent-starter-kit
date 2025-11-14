@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Multi-Agent Runner Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .header .subtitle {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .status-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .status-item {
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .status-item .label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+
+        .status-item .value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-badge.enabled {
+            background: #48bb78;
+            color: white;
+        }
+
+        .status-badge.disabled {
+            background: #cbd5e0;
+            color: #4a5568;
+        }
+
+        .status-badge.running {
+            background: #4299e1;
+            color: white;
+        }
+
+        .status-badge.dry-run {
+            background: #ed8936;
+            color: white;
+        }
+
+        .actions {
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+            margin-left: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(72, 187, 120, 0.4);
+        }
+
+        .table-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f7fafc;
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #666;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 14px;
+        }
+
+        tr:hover {
+            background: #f7fafc;
+        }
+
+        .status-success {
+            color: #48bb78;
+            font-weight: 600;
+        }
+
+        .status-error {
+            color: #f56565;
+            font-weight: 600;
+        }
+
+        .auto-refresh {
+            text-align: right;
+            color: #666;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .message {
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.success {
+            background: #c6f6d5;
+            color: #22543d;
+            border-left: 4px solid #48bb78;
+        }
+
+        .message.error {
+            background: #fed7d7;
+            color: #742a2a;
+            border-left: 4px solid #f56565;
+        }
+
+        .message.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 AI Multi-Agent Runner Dashboard</h1>
+            <p class="subtitle">24時間稼働システムの監視とコントロール</p>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="status-card">
+            <h2>Runner Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="label">Enabled</div>
+                    <div class="value">
+                        <span class="status-badge {{ 'enabled' if status.enabled else 'disabled' }}">
+                            {{ 'ENABLED' if status.enabled else 'DISABLED' }}
+                        </span>
+                    </div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Running</div>
+                    <div class="value">
+                        <span class="status-badge {{ 'running' if status.running else 'disabled' }}">
+                            {{ 'RUNNING' if status.running else 'STOPPED' }}
+                        </span>
+                    </div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Mode</div>
+                    <div class="value">
+                        <span class="status-badge dry-run">DRY RUN</span>
+                    </div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Jobs (Last Hour)</div>
+                    <div class="value">{{ status.get('jobs_executed_last_hour', 0) }}</div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Total Jobs</div>
+                    <div class="value">{{ status.get('registry_stats', {}).get('total_jobs', 0) }}</div>
+                </div>
+                <div class="status-item">
+                    <div class="label">Errors</div>
+                    <div class="value" style="color: {{ '#f56565' if status.get('consecutive_errors', 0) > 0 else '#48bb78' }}">
+                        {{ status.get('consecutive_errors', 0) }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="runNowBtn" class="btn btn-primary" onclick="runNow()">
+                    ▶ Run Demo Now
+                </button>
+                <button class="btn btn-secondary" onclick="location.reload()">
+                    🔄 Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <h2>Recent Runs (Last {{ runs|length }})</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Job</th>
+                        <th>Status</th>
+                        <th>Duration</th>
+                        <th>DRY Run</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in runs %}
+                    <tr>
+                        <td>{{ run.timestamp }}</td>
+                        <td><strong>{{ run.job }}</strong></td>
+                        <td>
+                            <span class="{{ 'status-success' if run.status == 'success' else 'status-error' }}">
+                                {{ run.status.upper() }}
+                            </span>
+                        </td>
+                        <td>{{ run.duration_ms }}ms</td>
+                        <td>{{ '✓' if run.dry_run else '✗' }}</td>
+                        <td>{{ run.result.get('message', run.result.get('status', '-')) }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not runs %}
+                    <tr>
+                        <td colspan="6" style="text-align: center; color: #999;">
+                            No runs recorded yet. Enable RUNNER_ENABLED=true to start.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            <div class="auto-refresh">
+                Auto-refresh in <span id="countdown">30</span>s
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let countdown = 30;
+
+        // オートリフレッシュ
+        setInterval(() => {
+            countdown--;
+            document.getElementById('countdown').textContent = countdown;
+
+            if (countdown <= 0) {
+                location.reload();
+            }
+        }, 1000);
+
+        // Run Now ボタン
+        async function runNow() {
+            const btn = document.getElementById('runNowBtn');
+            const messageDiv = document.getElementById('message');
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Running...';
+
+            try {
+                const response = await fetch('/runner/run-now', {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showMessage('success', `✅ ${data.jobs_count} jobs triggered successfully!`);
+
+                    // 3秒後にリロード
+                    setTimeout(() => location.reload(), 3000);
+                } else {
+                    showMessage('error', `❌ Error: ${data.detail || 'Unknown error'}`);
+                    btn.disabled = false;
+                    btn.textContent = '▶ Run Demo Now';
+                }
+            } catch (error) {
+                showMessage('error', `❌ Network error: ${error.message}`);
+                btn.disabled = false;
+                btn.textContent = '▶ Run Demo Now';
+            }
+        }
+
+        function showMessage(type, text) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = `message ${type} show`;
+            messageDiv.textContent = text;
+
+            setTimeout(() => {
+                messageDiv.className = 'message';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
