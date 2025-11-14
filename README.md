@@ -549,6 +549,217 @@ DRY_RUN=false                   # 実API使用
 LLM_DAILY_MAX_COST_USD=10.0     # 日次予算を設定
 ```
 
+## 24時間稼働 Runner
+
+AI Multi-Agent Starter Kitには、継続的なタスク実行を管理する24時間稼働Runnerが組み込まれています。
+
+### 特徴
+
+- **DRY_RUNモード**: デフォルトでゼロコスト稼働
+- **JSONL形式ログ**: `storage/runs/*.jsonl` に実行イベントを記録
+- **自動レポート生成**: GitHub Actionsで毎日レポートを作成
+- **REST API**: `/runner/status`, `/runner/run-now` エンドポイント
+- **3種類のビルトインジョブ**:
+  - **heartbeat**: 30秒ごとに生存確認
+  - **cleanup**: 10分ごとに古いログを削除
+  - **demo**: 5分ごとにデモタスクを実行
+
+### クイックスタート
+
+```bash
+# 1. Runnerを有効化（デフォルトは無効）
+export RUNNER_ENABLED=true
+export DRY_RUN=true  # ゼロコスト稼働
+
+# 2. Runnerを起動
+python -m runner.main
+```
+
+### 環境変数
+
+```bash
+# .env
+RUNNER_ENABLED=false              # Runnerの有効化
+DRY_RUN=true                      # ゼロコストモード（推奨）
+
+# ジョブ実行間隔（秒）
+RUNNER_LOOP_INTERVAL=60           # メインループ
+RUNNER_HEARTBEAT_SECONDS=30       # Heartbeat間隔
+RUNNER_CLEANUP_SECONDS=600        # Cleanup間隔
+
+# 並列実行とエラーハンドリング
+RUNNER_MAX_CONCURRENCY=4          # 同時実行数
+RUNNER_MAX_ERRORS=5               # 連続エラー上限
+BACKOFF_BASE_SECONDS=2            # バックオフ基準（秒）
+RUNNER_MAX_BACKOFF=300            # 最大バックオフ（秒）
+
+# ウォッチドッグ
+RUNNER_WATCHDOG_ENABLED=true      # ウォッチドッグ有効化
+RUNNER_WATCHDOG_TIMEOUT=600       # タイムアウト（秒）
+
+# レート制限
+RUNNER_MAX_JOBS_PER_MINUTE=10     # 分間実行数上限
+RUNNER_MAX_JOBS_PER_HOUR=100      # 時間実行数上限
+
+# ストレージとログ
+RUNNER_LOG_DIR=storage/runs       # ログディレクトリ
+RUNNER_LOG_ROTATION_DAYS=30       # ログ保持期間（日）
+RUNNER_SHUTDOWN_TIMEOUT=30        # シャットダウンタイムアウト（秒）
+```
+
+### REST API
+
+#### GET /runner/status
+
+Runnerのステータスを取得:
+
+```bash
+curl http://localhost:8000/runner/status
+```
+
+レスポンス例:
+```json
+{
+  "enabled": true,
+  "running": true,
+  "consecutive_errors": 0,
+  "jobs_executed_last_hour": 42,
+  "registry_stats": {
+    "total_jobs": 3,
+    "enabled_jobs": 3,
+    "jobs": [
+      {
+        "name": "heartbeat",
+        "enabled": true,
+        "run_count": 120,
+        "error_count": 0
+      }
+    ]
+  }
+}
+```
+
+#### POST /runner/run-now
+
+すべてのジョブを即座に実行:
+
+```bash
+curl -X POST http://localhost:8000/runner/run-now
+```
+
+### 朝のレポート生成
+
+24時間分の実行イベントを集計してレポートを生成:
+
+```bash
+# 手動実行
+python scripts/morning_report.py
+
+# 出力
+# - storage/reports/YYYY-MM-DD.md   (Markdownレポート)
+# - storage/reports/YYYY-MM-DD.csv  (CSVデータ)
+```
+
+生成されるレポート内容:
+- **サマリー**: 総イベント数、成功/エラー数、総実行時間
+- **ジョブ別統計**: 実行回数、成功率、平均実行時間
+- **エラー詳細**: エラーが発生した場合の詳細情報
+
+### GitHub Actions自動レポート
+
+毎日 9:00 JST に自動的にレポートを生成:
+
+```yaml
+# .github/workflows/runner-dry.yml
+# - DRY_RUNモードで1分間Runnerを実行
+# - レポート生成
+# - GitHubリポジトリにコミット
+# - Issueにサマリーを投稿
+```
+
+手動実行:
+```bash
+# GitHub ActionsからWorkflowを手動実行
+Actions → Runner DRY Mode - Morning Report → Run workflow
+```
+
+### テストの実行
+
+```bash
+# Runnerのテスト（DRY_RUNモード）
+pytest tests/test_runner_dry.py -v
+
+# 特定のテストクラスのみ
+pytest tests/test_runner_dry.py::TestRunner -v
+
+# 統合テスト
+pytest tests/test_runner_dry.py::TestIntegration -v
+```
+
+### ログファイル形式
+
+すべてのジョブ実行イベントは `storage/runs/YYYY-MM-DD.jsonl` に記録:
+
+```jsonl
+{"timestamp": "2024-01-01T12:00:00", "job": "heartbeat", "status": "success", "duration_ms": 50, "dry_run": true, "result": {"status": "alive"}}
+{"timestamp": "2024-01-01T12:05:00", "job": "demo", "status": "success", "duration_ms": 120, "dry_run": true, "result": {"task_id": "demo_task_20240101_120500"}}
+```
+
+### カスタムジョブの追加
+
+新しいジョブを追加する方法:
+
+```python
+# runner/jobs.py に追加
+
+async def my_custom_job() -> Dict[str, Any]:
+    """カスタムジョブの実装"""
+    dry_run = os.getenv("DRY_RUN", "true").lower() == "true"
+
+    if dry_run:
+        # DRY_RUNモードの処理
+        return {
+            "status": "completed",
+            "mode": "DRY_RUN",
+            "cost": "$0.00",
+            "message": "Custom job completed (DRY_RUN)"
+        }
+    else:
+        # 実モードの処理
+        return {
+            "status": "completed",
+            "mode": "REAL",
+            "message": "Custom job completed"
+        }
+
+# ジョブを登録
+default_registry.register(
+    name="my_custom_job",
+    func=my_custom_job,
+    interval=3600,  # 1時間ごと
+    enabled=True,
+    description="My custom job"
+)
+```
+
+### 実稼働への移行
+
+DRY_RUNモードから実稼働に移行する場合:
+
+```bash
+# .env
+DRY_RUN=false                     # 実API使用
+RUNNER_ENABLED=true               # Runner有効化
+LLM_DAILY_MAX_COST_USD=10.0       # 日次予算を設定
+
+# Runnerを起動
+python -m runner.main
+```
+
+**注意**: 実稼働モードでは実際のLLM APIが呼ばれるため、コストが発生します。予算設定を必ず確認してください。
+
+---
+
 ## 開発ガイド
 
 ### 新しいアプリケーションを追加
