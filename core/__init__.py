@@ -12,7 +12,7 @@ This module contains the core infrastructure:
 from .workflow import AgentWorkflow
 from .memory import MemoryStore
 from .task_router import TaskRouter
-from .tools import ToolRegistry
+from .tool_registry import ToolRegistry
 from .llm_router import LLMRouter, get_llm_router, LLMProvider
 
 __all__ = [
