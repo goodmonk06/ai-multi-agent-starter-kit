@@ -25,6 +25,15 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run nightly tasks
+        env:
+          DRY_RUN: false
+          NOTIFY_CHANNELS: email
+          SMTP_HOST: smtp.gmail.com
+          SMTP_PORT: 587
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_USER }}
+          SMTP_TO: hilia10@ezweb.ne.jp
         run: |
           python scripts/nightly_tasks.py
 
