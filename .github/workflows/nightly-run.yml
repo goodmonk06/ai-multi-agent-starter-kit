@@ -24,64 +24,9 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Run scheduled care tasks
+      - name: Run nightly tasks
         run: |
-          echo "Running care scheduler nightly tasks..."
-          python -c "
-          import asyncio
-          from core import MemoryStore
-          from agents import SchedulerAgent
-          from apps.care_scheduler import CareSchedulerApp
-
-          async def main():
-              memory = MemoryStore()
-              agents = {'scheduler': SchedulerAgent(memory)}
-              app = CareSchedulerApp(agents, None, memory)
-              print('Care scheduler nightly tasks completed')
-
-          asyncio.run(main())
-          "
-
-      - name: Run SNS automation tasks
-        run: |
-          echo "Running SNS automation nightly tasks..."
-          python -c "
-          import asyncio
-          from core import MemoryStore
-          from agents import GeneratorAgent, ComplianceAgent
-          from apps.sns_auto import SnsAutoApp
-
-          async def main():
-              memory = MemoryStore()
-              agents = {
-                  'generator': GeneratorAgent(memory),
-                  'compliance': ComplianceAgent(memory)
-              }
-              app = SnsAutoApp(agents, None, memory)
-              print('SNS automation nightly tasks completed')
-
-          asyncio.run(main())
-          "
-
-      - name: Generate daily report
-        run: |
-          echo "Generating daily report..."
-          python -c "
-          import asyncio
-          from datetime import datetime
-
-          async def main():
-              report = f'''
-              Daily Report - {datetime.now().strftime('%Y-%m-%d')}
-              ===================================
-              - Care scheduler tasks: Completed
-              - SNS automation tasks: Completed
-              - System health: OK
-              '''
-              print(report)
-
-          asyncio.run(main())
-          "
+          python scripts/nightly_tasks.py
 
       - name: Upload results
         uses: actions/upload-artifact@v3
