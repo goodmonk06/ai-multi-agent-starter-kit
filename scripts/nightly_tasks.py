@@ -120,6 +120,50 @@ async def generate_daily_summary():
     return summary
 
 
+async def send_completion_notification(health, status, summary):
+    """完了通知を送信"""
+    try:
+        # notifierをインポート（オプショナル）
+        from core.notifier import send_notification
+
+        subject = f"✅ Nightly Tasks Completed - {datetime.now().strftime('%Y-%m-%d')}"
+
+        body = f"""
+🌙 Nightly Tasks が正常に完了しました
+
+実行日時: {datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}
+
+📊 実行結果:
+-------------------------------------------
+✓ ヘルスチェック: {health['status']}
+✓ システムステータス: {status['status']}
+✓ デイリーサマリー: 生成完了
+
+{summary}
+
+-------------------------------------------
+次回実行: 明日の同時刻
+
+AI Multi-Agent Starter Kit
+"""
+
+        result = await send_notification(subject=subject, body=body)
+
+        if result.get("dry_run"):
+            logger.info("Notification recorded in DRY_RUN mode")
+        else:
+            logger.info("Notification sent successfully")
+
+        return result
+
+    except ImportError:
+        logger.info("Notifier not available, skipping notification")
+        return {"status": "skipped", "reason": "notifier not available"}
+    except Exception as e:
+        logger.error("Failed to send notification", error=str(e))
+        return {"status": "error", "error": str(e)}
+
+
 async def main():
     """メイン処理"""
     print("=" * 60)
@@ -146,6 +190,17 @@ async def main():
         print("   ✓ Daily summary generated")
         print()
 
+        # 通知送信
+        print("4. Sending completion notification...")
+        notification = await send_completion_notification(health, status, summary)
+        if notification.get("dry_run"):
+            print("   🔵 Notification recorded (DRY_RUN mode)")
+        elif notification.get("status") == "skipped":
+            print("   ⚠️  Notification skipped")
+        else:
+            print("   ✓ Notification sent")
+        print()
+
         print("=" * 60)
         print("✅ All nightly tasks completed successfully")
         print("=" * 60)
@@ -154,7 +209,8 @@ async def main():
             "status": "success",
             "health": health,
             "system_status": status,
-            "summary": summary
+            "summary": summary,
+            "notification": notification
         }
 
     except Exception as e:
